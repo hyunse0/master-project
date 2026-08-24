@@ -1,0 +1,40 @@
+services:
+  # rag-practice에서 이미 마이그레이션된 전립선암 PoC 마트(poc 스키마)를 그대로 실행하는
+  # 실제 연결 대상 Postgres. 나중에 진짜 운영 DB로 바꿀 때는 이 서비스 대신 .env의
+  # 접속 정보만 외부 DB로 돌리면 된다 (커넥터 코드는 무관하게 동작).
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: poc_prostate
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+  # 앱 자체의 운영 데이터(run 레지스트리, LangGraph PostgresSaver 체크포인트)를 담는 DB.
+  # 타겟 도메인 DB(위 postgres 서비스)와는 별개 — 도메인이 바뀌거나 외부 DB로 교체돼도
+  # 이 데이터는 계속 남아있어야 하므로 분리한다.
+  app-db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: nl2sql_app
+    ports:
+      - "5433:5432"
+    volumes:
+      - app_db_data:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
+  qdrant_data:
+  app_db_data:
