@@ -23,6 +23,13 @@
   --accent-bg:rgba(107,79,216,.09);
   --accent-bg-strong:rgba(107,79,216,.07);
 
+  /* 검토(HITL) 대기 상태 전용 — schema/SQL 검토 카드, 스테이지 레일의 waiting 상태 */
+  --review-bg:#faf9fe;
+  --review-text:#4c34a8;
+  --review-line:#e6e1f7;
+  --review-line-strong:#d9d1f4;
+  --review-dot:#c9bef0;
+
   --success:#1f8a5f;
   --success-text:#166b4a;
   --success-bg:#eaf6f0;

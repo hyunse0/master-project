@@ -46,6 +46,10 @@ class DomainConfig:
     def prompt_fragments_path(self) -> Path:
         return self.root / "prompt_fragments.yaml"
 
+    @property
+    def benchmark_queries_path(self) -> Path:
+        return self.root / "benchmark_queries.json"
+
 
 def _fetch_connection_row(name: str | None) -> dict | None:
     """domain_connections에서 접속정보를 읽는다. name이 없으면 활성 도메인(is_active) 하나를 찾는다.

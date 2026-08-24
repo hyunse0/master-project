@@ -1,21 +1,23 @@
 import { useCallback, useEffect, useState } from 'react'
 import { domainApi, type DomainStatus, type TableSummary, type TableDetail } from './api/domainClient'
+import { QueryRunTab } from './components/queryRun/QueryRunTab'
 import './App.css'
 
 type Phase = 'loading' | 'connected' | 'error'
+type View = 'query' | 'domain'
 
-const NAV_GROUPS = [
+const NAV_GROUPS: { label: string; items: { label: string; view?: View; soon: boolean }[] }[] = [
   {
     label: '에이전트',
     items: [
-      { label: '질의 실행', soon: true },
+      { label: '질의 실행', view: 'query', soon: false },
       { label: '실행 히스토리', soon: true },
     ],
   },
   {
     label: '에이전트 관리',
     items: [
-      { label: '도메인 관리', soon: false, current: true },
+      { label: '도메인 관리', view: 'domain', soon: false },
       { label: '검토 정책', soon: true },
       { label: 'Golden Set 평가', soon: true },
       { label: '비용 대시보드', soon: true },
@@ -23,7 +25,7 @@ const NAV_GROUPS = [
   },
 ]
 
-function Sidebar() {
+function Sidebar({ current, onSelect }: { current: View; onSelect: (view: View) => void }) {
   return (
     <aside className="rail">
       <div className="rail-brand">
@@ -36,7 +38,12 @@ function Sidebar() {
             {i > 0 && <div className="rail-divider" />}
             <div className="rail-group-label">{group.label}</div>
             {group.items.map((item) => (
-              <div key={item.label} className={`rail-link ${item.current ? 'current' : ''}`}>
+              <div
+                key={item.label}
+                className={`rail-link ${item.view === current ? 'current' : ''}`}
+                onClick={item.view ? () => onSelect(item.view!) : undefined}
+                style={item.view ? { cursor: 'pointer' } : undefined}
+              >
                 <span className="rail-dot" />
                 <span className="rail-label">{item.label}</span>
                 {item.soon && <span className="rail-soon">SOON</span>}
@@ -276,6 +283,7 @@ function TableDetailPanel({ detail, loading }: { detail: TableDetail | null; loa
 }
 
 function App() {
+  const [view, setView] = useState<View>('query')
   const [phase, setPhase] = useState<Phase>('loading')
   const [status, setStatus] = useState<DomainStatus | null>(null)
   const [statusError, setStatusError] = useState<string | null>(null)
@@ -334,27 +342,33 @@ function App() {
 
   return (
     <div className="shell">
-      <Sidebar />
+      <Sidebar current={view} onSelect={setView} />
       <main className="main">
-        <header className="page-header">
-          <h1>도메인 관리</h1>
-          <p className="subtitle">연결된 DB의 테이블과 컬럼 메타데이터를 확인합니다.</p>
-        </header>
+        {view === 'query' ? (
+          <QueryRunTab />
+        ) : (
+          <>
+            <header className="page-header">
+              <h1>도메인 관리</h1>
+              <p className="subtitle">연결된 DB의 테이블과 컬럼 메타데이터를 확인합니다.</p>
+            </header>
 
-        <div className="content">
-          <StatusSection phase={phase} status={status} errorMessage={statusError} onRetry={loadStatus} />
+            <div className="content">
+              <StatusSection phase={phase} status={status} errorMessage={statusError} onRetry={loadStatus} />
 
-          <div className="explorer-grid">
-            <TableListPanel
-              phase={phase}
-              tables={tables}
-              tablesLoading={tablesLoading}
-              selected={selectedTable}
-              onSelect={selectTable}
-            />
-            <TableDetailPanel detail={detail} loading={detailLoading} />
-          </div>
-        </div>
+              <div className="explorer-grid">
+                <TableListPanel
+                  phase={phase}
+                  tables={tables}
+                  tablesLoading={tablesLoading}
+                  selected={selectedTable}
+                  onSelect={selectTable}
+                />
+                <TableDetailPanel detail={detail} loading={detailLoading} />
+              </div>
+            </div>
+          </>
+        )}
       </main>
     </div>
   )

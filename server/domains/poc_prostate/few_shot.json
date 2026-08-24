@@ -1,0 +1,26 @@
+[
+  {
+    "question": "전립선암 환자는 총 몇 명인가요?",
+    "intent": "count distinct prostate cancer patients",
+    "sql": "SELECT COUNT(DISTINCT s_patno) FROM poc.poc_prostate_patient_info",
+    "tables": ["poc.poc_prostate_patient_info"],
+    "metrics": ["patient_count"],
+    "domain": "poc_prostate"
+  },
+  {
+    "question": "연령대별 전립선암 환자 수를 알려줘",
+    "intent": "count patients grouped by age band",
+    "sql": "SELECT age_10_sect_nm, COUNT(DISTINCT s_patno) AS patient_count FROM poc.poc_prostate_patient_info GROUP BY age_10_sect_nm ORDER BY age_10_sect_nm",
+    "tables": ["poc.poc_prostate_patient_info"],
+    "metrics": ["patient_count"],
+    "domain": "poc_prostate"
+  },
+  {
+    "question": "Gleason Grade Group별 검사 건수를 보여줘",
+    "intent": "count pathology exams grouped by gleason grade group",
+    "sql": "SELECT grade_group, COUNT(*) AS exam_count FROM poc.poc_prostate_path GROUP BY grade_group ORDER BY exam_count DESC",
+    "tables": ["poc.poc_prostate_path"],
+    "metrics": ["exam_count"],
+    "domain": "poc_prostate"
+  }
+]

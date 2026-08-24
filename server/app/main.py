@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.domain_routes import router as domain_router
+from app.api.run_routes import router as run_router
 
 app = FastAPI(title="Data Access Copilot API")
 
@@ -13,6 +14,7 @@ app.add_middleware(
 )
 
 app.include_router(domain_router)
+app.include_router(run_router)
 
 
 @app.get("/health")

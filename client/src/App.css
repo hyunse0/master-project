@@ -205,3 +205,249 @@
 .fk-col{ font-size: 11.5px; font-weight: 500; }
 .fk-arrow{ font-size: 11.5px; color: var(--ink-faint); }
 .fk-ref{ font-size: 11.5px; font-weight: 500; color: var(--accent); }
+
+/* ---- 질의 실행 탭 (Query Run 목업 포팅) ---- */
+
+.header-spacer{ flex: 1; }
+.header-domain-label{ font-size: 10.5px; color: var(--ink-mute); }
+.header-domain-value{
+  font-size: 11.5px; font-weight: 500; color: #3c4450;
+  border: 1px solid var(--line-strong); border-radius: 6px; padding: 5px 9px;
+}
+
+/* 공용 버튼 */
+.btn-primary{ padding: 9px 18px; border: none; background: var(--accent); color: #fff; border-radius: 7px; font: 600 12px 'JetBrains Mono', monospace; cursor: pointer; }
+.btn-primary:hover{ background: var(--accent-hover); }
+.btn-primary:disabled{ opacity: .5; cursor: not-allowed; }
+.btn-secondary{ padding: 9px 14px; border: 1px solid var(--line-strong); background: #fff; border-radius: 7px; font: 500 11.5px 'JetBrains Mono', monospace; color: #4a525e; cursor: pointer; }
+.btn-secondary:hover{ background: #f4f6f8; }
+.btn-secondary:disabled{ opacity: .5; cursor: not-allowed; }
+.btn-danger-outline{ padding: 9px 14px; border: 1px solid #e3b4ac; background: #fff; border-radius: 7px; font: 500 11.5px 'JetBrains Mono', monospace; color: var(--danger-text); cursor: pointer; }
+.btn-danger-outline:hover{ background: var(--danger-bg); }
+
+/* 질의 입력 카드 */
+.run-input-card{
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 16px 20px 18px; display: flex; flex-direction: column; gap: 14px; box-shadow: var(--shadow);
+}
+.run-input-top{ display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.run-input-label{ font-size: 9.5px; font-weight: 600; letter-spacing: .1em; color: var(--ink-label); }
+.mode-toggle{ display: flex; border: 1px solid var(--line-strong); border-radius: 8px; overflow: hidden; }
+.mode-toggle button{ padding: 7px 14px; border: none; border-left: 1px solid var(--line-strong); background: #fff; color: #5b6470; font: 400 11.5px 'JetBrains Mono', monospace; cursor: pointer; }
+.mode-toggle button:first-child{ border-left: none; }
+.mode-toggle button:hover{ background: #f4f2fc; }
+.mode-toggle button.active{ background: var(--accent); color: #fff; font-weight: 600; }
+.run-input-checks{ display: flex; align-items: center; gap: 14px; padding-left: 4px; }
+.run-input-checks label{ display: flex; align-items: center; gap: 7px; cursor: pointer; }
+.run-input-checks input{ width: 14px; height: 14px; accent-color: var(--accent); cursor: pointer; }
+.run-input-checks span{ font-size: 11.5px; color: #4a525e; }
+.run-input-divider{ height: 1px; background: var(--line-faint); }
+.run-input-row{ display: flex; gap: 10px; align-items: flex-start; }
+.run-question-input{
+  flex: 1; min-width: 0; padding: 11px 12px; border: 1px solid var(--line-strong); border-radius: 8px;
+  font: 400 12.5px/1.6 'JetBrains Mono', monospace; color: var(--ink); outline: none; resize: vertical;
+}
+.run-question-input:focus{ border-color: var(--accent); box-shadow: 0 0 0 3px rgba(107,79,216,.12); }
+.run-button{ flex-shrink: 0; padding: 11px 20px; }
+
+.run-error-banner{
+  padding: 10px 14px; border: 1px solid var(--danger-line); background: var(--danger-bg);
+  color: var(--danger-text-soft); border-radius: 8px; font-size: 12px; line-height: 1.5;
+}
+
+/* 진행 상태 카드 */
+.progress-card{
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 16px 20px 18px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 14px;
+}
+.progress-head{ display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.progress-head h2{ margin: 0; font-size: 12px; font-weight: 600; }
+
+.run-status-badge{ font-size: 10.5px; font-weight: 500; padding: 3px 8px; border-radius: 5px; border: 1px solid; }
+.run-status-badge.status-fetching,
+.run-status-badge.status-schema_review,
+.run-status-badge.status-sql_review{ color: var(--review-text); background: var(--review-bg); border-color: var(--review-line-strong); }
+.run-status-badge.status-done{ color: var(--success-text); background: var(--success-bg); border-color: var(--success-line); }
+.run-status-badge.status-failed{ color: var(--danger-text); background: var(--danger-bg); border-color: var(--danger-line); }
+.run-status-badge.status-idle{ color: var(--ink-mute); background: var(--surface-soft); border-color: var(--line-soft); }
+
+.retry-badge{ font-size: 10.5px; font-weight: 500; color: var(--warn-text); background: var(--warn-bg); border: 1px solid var(--warn-line); padding: 3px 8px; border-radius: 5px; }
+
+.intent-summary-row{
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 9px 12px;
+  border: 1px solid var(--line-soft); border-radius: 8px; background: var(--surface-soft);
+}
+.pill{ font-size: 10.5px; font-weight: 500; color: #4a525e; background: #fff; border: 1px solid var(--line); padding: 3px 8px; border-radius: 20px; }
+.pill-difficulty{ color: var(--warn-text); background: var(--warn-bg); border-color: var(--warn-line); }
+
+.retry-note{
+  display: flex; align-items: center; gap: 9px; padding: 9px 12px; border: 1px dashed #e3cd9e;
+  border-radius: 8px; background: #fffdf7; font-size: 11px; color: var(--warn-text);
+}
+
+/* 스테이지 레일 */
+.stage-rail{ display: flex; align-items: stretch; flex-wrap: wrap; }
+.stage-cell{ flex: 1 1 132px; min-width: 132px; display: flex; align-items: stretch; }
+.stage-box{ flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 7px; padding: 10px 10px 11px; border: 1px solid var(--line); border-radius: 9px; background: #fff; }
+.stage-box-top{ display: flex; align-items: center; gap: 7px; }
+.stage-dot{ width: 17px; height: 17px; border-radius: 50%; background: #fff; border: 1.5px solid #d5dae1; display: flex; align-items: center; justify-content: center; font: 700 8.5px 'JetBrains Mono', monospace; color: var(--ink-mute); flex-shrink: 0; }
+.stage-no{ font-size: 9px; color: var(--ink-faint); }
+.stage-hitl-badge{ font-size: 8px; font-weight: 600; letter-spacing: .06em; color: var(--accent); background: var(--accent-bg); padding: 2px 4px; border-radius: 3px; }
+.stage-label{ font: 500 11.5px/1.4 'JetBrains Mono', monospace; color: var(--ink); word-break: keep-all; }
+.stage-meta{ font-size: 10px; line-height: 1.4; color: var(--ink-faint); word-break: keep-all; }
+.stage-arrow{ font-size: 11px; color: #c9ced5; padding: 0 3px; flex-shrink: 0; display: flex; align-items: center; }
+
+.stage-box.status-skipped{ border-color: var(--line-faint); background: #fbfcfd; }
+.stage-box.status-skipped .stage-label{ color: #c3c9d0; }
+.stage-box.status-skipped .stage-dot{ border-color: #e6eaee; }
+
+.stage-box.status-waiting{ background: var(--review-bg); border-color: var(--review-dot); }
+.stage-box.status-waiting .stage-label{ color: var(--review-text); font-weight: 600; }
+.stage-box.status-waiting .stage-meta{ color: #7a63d6; }
+.stage-dot.status-waiting{ background: var(--accent); border-color: var(--accent); color: #fff; animation: pulse 1.6s ease-in-out infinite; }
+
+.stage-box.status-failed{ background: var(--danger-bg); border-color: var(--danger-line); }
+.stage-box.status-failed .stage-label{ color: var(--danger-text); font-weight: 600; }
+.stage-box.status-failed .stage-meta{ color: #b06055; }
+.stage-dot.status-failed{ background: var(--danger); border-color: var(--danger); color: #fff; }
+
+.stage-box.status-done .stage-label{ color: #2c3238; }
+.stage-dot.status-done{ background: var(--success); border-color: var(--success); color: #fff; }
+
+.stage-box.status-idle .stage-label{ color: var(--ink-mute); }
+
+.stage-box.clickable{ cursor: pointer; }
+.stage-box.clickable:hover{ box-shadow: 0 0 0 1px var(--accent); }
+.stage-box.selected{ box-shadow: 0 0 0 2px var(--accent); }
+
+.stage-box.status-running{ background: var(--review-bg); border-color: var(--review-dot); }
+.stage-box.status-running .stage-label{ color: var(--review-text); font-weight: 600; }
+.stage-box.status-running .stage-meta{ color: #7a63d6; }
+.stage-dot.status-running{ background: #fff; border-color: var(--accent); color: var(--accent); animation: pulse 1.1s ease-in-out infinite; }
+
+/* 진행 중(running_*) 단계별 실시간 패널 */
+@keyframes fadeInUp{ from{ opacity: 0; transform: translateY(4px); } to{ opacity: 1; transform: translateY(0); } }
+
+.running-card{ background: var(--surface); border: 1px solid var(--review-line-strong); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); }
+.running-card-head{ display: flex; align-items: center; gap: 10px; padding: 13px 20px; background: var(--review-bg); border-bottom: 1px solid var(--review-line); flex-wrap: wrap; }
+.running-spinner{ width: 13px; height: 13px; border-radius: 50%; border: 2px solid rgba(107,79,216,.25); border-top-color: var(--accent); animation: spin .8s linear infinite; display: block; flex-shrink: 0; }
+.running-card-title{ margin: 0; font-size: 12.5px; font-weight: 600; color: var(--review-text); }
+.running-card-sub{ margin: 0; font-size: 11.5px; color: var(--ink-soft); }
+.running-card-body{ padding: 16px 20px 20px; display: flex; flex-direction: column; gap: 12px; }
+.running-block{ display: flex; flex-direction: column; gap: 8px; }
+
+.running-question-box{
+  margin: 0; padding: 11px 13px; border: 1px solid var(--line-soft); border-radius: 8px; background: var(--surface-soft);
+  font-size: 12px; line-height: 1.6; color: #2c3238;
+}
+.running-inline-status{ display: flex; align-items: center; gap: 8px; }
+.running-inline-dot{ width: 9px; height: 9px; border-radius: 50%; background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
+.running-inline-text{ font-size: 11.5px; color: #7a63d6; }
+
+.running-candidate-row{
+  display: flex; flex-direction: column; gap: 6px; padding: 11px 13px; border: 1px solid var(--line-soft);
+  border-radius: 8px; background: var(--surface-soft); animation: fadeInUp .4s ease both;
+}
+.running-candidate-top{ display: flex; align-items: center; gap: 8px; }
+.running-candidate-name{ font-size: 12px; font-weight: 500; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.running-candidate-score{ font-size: 10.5px; font-weight: 600; color: var(--accent); flex-shrink: 0; }
+.running-bar-track{ height: 4px; border-radius: 2px; background: #eceff3; overflow: hidden; }
+.running-bar-fill{ height: 100%; border-radius: 2px; background: var(--accent); }
+.running-candidate-comment{ font-size: 11px; line-height: 1.4; color: var(--ink-dim); }
+
+.running-check-row{
+  display: flex; align-items: flex-start; gap: 10px; padding: 10px 13px; border: 1px solid var(--line-soft);
+  border-radius: 8px; background: #fff; animation: fadeInUp .3s ease both;
+}
+.running-check-row.status-fail{ border-color: var(--danger-line); }
+.running-check-mark{ font-size: 11px; font-weight: 700; flex-shrink: 0; margin-top: 1px; }
+.running-check-row.status-ok .running-check-mark{ color: var(--success); }
+.running-check-row.status-fail .running-check-mark{ color: var(--danger); }
+.running-check-text{ display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
+.running-check-name{ font-size: 11.5px; font-weight: 500; color: #2c3238; }
+.running-check-detail{ font-size: 11.5px; line-height: 1.5; color: var(--ink-dim); }
+
+/* 스테이지 클릭 시 보여주는 읽기전용 스냅샷 카드 */
+.snapshot-card{ background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); }
+.snapshot-card-head{ display: flex; align-items: center; gap: 10px; padding: 13px 20px; border-bottom: 1px solid var(--line-soft); }
+.snapshot-card-title{ margin: 0; font-size: 12.5px; font-weight: 600; }
+.snapshot-card-body{ padding: 16px 20px 20px; display: flex; flex-direction: column; gap: 12px; }
+.snapshot-empty-text{ margin: 0; font-size: 12px; line-height: 1.6; color: var(--ink-mute); }
+.snapshot-list{ margin: 0; padding-left: 18px; font-size: 12px; line-height: 1.8; color: var(--ink); }
+
+/* 스키마/SQL 검토 카드 (공용) */
+.review-card{ background: var(--surface); border: 1px solid var(--review-line-strong); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); }
+.review-card-head{ display: flex; align-items: center; gap: 10px; padding: 13px 20px; background: var(--review-bg); border-bottom: 1px solid var(--review-line); flex-wrap: wrap; }
+.review-pulse-dot{ width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: pulse 1.6s ease-in-out infinite; flex-shrink: 0; }
+.review-card-title{ margin: 0; font-size: 12.5px; font-weight: 600; color: var(--review-text); }
+.review-card-desc{ margin: 0; font-size: 11.5px; color: var(--ink-soft); }
+.review-card-body{ padding: 14px 20px 18px; display: flex; flex-direction: column; gap: 12px; }
+.review-card-spacer{ flex: 1; }
+.review-endpoint-label{ font-size: 10.5px; color: var(--ink-faint); }
+.review-selected-label{ font-size: 11.5px; color: var(--ink-soft); }
+.review-preview-note{ margin: 0; font-size: 10.5px; line-height: 1.5; color: var(--ink-mute); font-style: italic; }
+.review-card-actions{ display: flex; align-items: center; gap: 12px; padding-top: 2px; flex-wrap: wrap; }
+.review-section-label{ font-size: 9.5px; font-weight: 600; letter-spacing: .1em; color: var(--ink-label); }
+.review-section-hint{ font-size: 10.5px; color: var(--ink-faint); }
+.review-retry-box{ display: flex; flex-direction: column; gap: 5px; padding: 11px 13px; border: 1px solid var(--line-soft); border-radius: 8px; background: var(--surface-soft); }
+.review-retry-box-title{ font-size: 10px; font-weight: 600; letter-spacing: .08em; color: var(--ink-label); }
+.review-retry-box-detail{ font-size: 11.5px; line-height: 1.5; color: var(--ink-soft); }
+
+/* 스키마 후보 카드 그리드 */
+.schema-candidate-grid{ display: grid; grid-template-columns: repeat(auto-fill, minmax(268px, 1fr)); gap: 10px; }
+.schema-candidate-card{ display: flex; align-items: flex-start; gap: 10px; padding: 12px 13px; border: 1px solid var(--line); border-radius: 9px; background: #fff; cursor: pointer; }
+.schema-candidate-card:hover{ border-color: var(--accent); }
+.schema-candidate-card.checked{ background: var(--review-bg); border-color: var(--review-line-strong); }
+.schema-candidate-card input{ width: 14px; height: 14px; margin-top: 2px; accent-color: var(--accent); cursor: pointer; flex-shrink: 0; }
+.schema-candidate-body{ display: flex; flex-direction: column; gap: 5px; min-width: 0; flex: 1; }
+.schema-candidate-top{ display: flex; align-items: center; gap: 7px; }
+.schema-candidate-name{ font-size: 12px; font-weight: 500; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.schema-candidate-card:not(.checked) .schema-candidate-name{ color: var(--ink-mute); }
+.schema-candidate-score{ font-size: 10.5px; font-weight: 600; color: var(--accent); flex-shrink: 0; }
+.schema-candidate-comment{ font-size: 11px; line-height: 1.4; color: var(--ink-dim); }
+.schema-candidate-cols{ font-size: 10px; color: var(--ink-faint); }
+
+/* SQL 검토/실행결과 공용 — 코드 블록 */
+.sql-review-label-row{ display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.sql-editor{
+  width: 100%; box-sizing: border-box; padding: 13px 15px; border: 1px solid var(--line-strong); border-radius: 9px;
+  background: #12151a; color: #dfe6ee; font: 400 12px/1.75 'JetBrains Mono', monospace; outline: none; resize: vertical; tab-size: 2;
+}
+.sql-editor:focus{ border-color: var(--accent); box-shadow: 0 0 0 3px rgba(107,79,216,.14); }
+.sql-view-box{
+  margin: 0; padding: 13px 15px; border-radius: 9px; background: #12151a; color: #dfe6ee;
+  font: 400 12px/1.75 'JetBrains Mono', monospace; overflow: auto; white-space: pre;
+}
+
+/* 실행 결과 카드 */
+.result-card{ background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); }
+.result-card-head{ display: flex; align-items: center; gap: 10px; padding: 13px 20px; border-bottom: 1px solid var(--line-soft); flex-wrap: wrap; }
+.result-dot{ width: 7px; height: 7px; border-radius: 50%; background: var(--success); box-shadow: 0 0 0 3px var(--success-bg); flex-shrink: 0; }
+.result-card-title{ margin: 0; font-size: 12.5px; font-weight: 600; }
+.result-card-meta{ font-size: 11px; color: var(--ink-mute); }
+.result-card-body{ padding: 16px 20px 22px; display: flex; flex-direction: column; gap: 16px; }
+.result-block{ display: flex; flex-direction: column; gap: 7px; }
+.result-summary-text{ margin: 0; font-size: 12.5px; line-height: 1.7; color: #2c3238; }
+.result-table-wrap{ border: 1px solid var(--line-faint); border-radius: 8px; overflow: auto; max-height: 360px; }
+.result-table-head{ display: grid; gap: 12px; padding: 9px 14px; background: var(--surface-soft); border-bottom: 1px solid var(--line-soft); font-size: 9.5px; font-weight: 600; letter-spacing: .08em; color: var(--ink-label); position: sticky; top: 0; }
+.result-table-row{ display: grid; gap: 12px; padding: 9px 14px; border-bottom: 1px solid var(--line-faint); font-size: 12px; color: #2c3238; }
+.result-table-row:last-child{ border-bottom: none; }
+.result-card-footer{ display: flex; gap: 10px; }
+
+/* 실패 카드 */
+.failed-card{ background: var(--danger-bg); border: 1px solid var(--danger-line); border-radius: var(--radius); overflow: hidden; }
+.failed-card-head{ display: flex; align-items: center; gap: 10px; padding: 13px 20px; border-bottom: 1px solid var(--danger-line); flex-wrap: wrap; }
+.failed-dot{ width: 7px; height: 7px; border-radius: 50%; background: var(--danger); box-shadow: 0 0 0 3px rgba(192,57,43,.14); flex-shrink: 0; }
+.failed-card-title{ margin: 0; font-size: 12.5px; font-weight: 600; color: var(--danger-text); }
+.failed-retry-label{ font-size: 10.5px; color: #c58f85; }
+.failed-card-body{ padding: 16px 20px 20px; display: flex; flex-direction: column; gap: 14px; }
+.failed-checks{ display: flex; flex-direction: column; gap: 8px; }
+.failed-check-row{ display: flex; align-items: flex-start; gap: 10px; padding: 10px 13px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+.failed-check-row.fail{ border-color: var(--danger-line); }
+.failed-check-mark{ font-size: 11px; font-weight: 700; flex-shrink: 0; margin-top: 1px; }
+.failed-check-row.ok .failed-check-mark{ color: var(--success); }
+.failed-check-row.fail .failed-check-mark{ color: var(--danger); }
+.failed-check-text{ display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
+.failed-check-name{ font-size: 11.5px; font-weight: 500; color: #2c3238; }
+.failed-check-detail{ font-size: 11.5px; line-height: 1.5; color: var(--ink-dim); }
+.failed-card-actions{ display: flex; gap: 10px; }

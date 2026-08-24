@@ -1,0 +1,10 @@
+# poc_prostate 도메인 특화 프롬프트 조각 — 스모크테스트용 최소 버전.
+# schema_provider의 컬럼 코멘트만으로는 드러나지 않는 "값 형식" 규칙만 남긴다.
+# 도메인이 바뀌면 이 파일이 없어도 공통 템플릿만으로 정상 동작한다(app/sql/prompt_builder.py).
+notes: |
+  - 날짜 컬럼은 대부분 *_dt(TEXT, 'YYYYMMDD') 또는 occur_ym(TEXT, 'YYYYMM') 형식이다.
+    비교/정렬 시 반드시 TO_DATE(col, 'YYYYMMDD') 또는 TO_DATE(col, 'YYYYMM')로 변환하라.
+  - 분석 마트 4개 테이블(poc_prostate_patient_info/op/path/blood)을 원천 테이블보다 우선
+    사용하라 — 필요한 컬럼이 마트에 이미 있으면 원천 테이블과 JOIN하지 마라.
+  - s_patno(환자번호)는 명시적 요청이 없으면 SELECT에 노출하지 말고 COUNT(DISTINCT s_patno)
+    같은 집계 용도로만 사용하라.

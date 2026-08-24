@@ -38,3 +38,40 @@ CREATE TABLE IF NOT EXISTS domain_connections (
 
 -- 에이전트가 동시에 쓰는 도메인은 항상 최대 1개 — 화면/코드가 아니라 제약으로 강제
 CREATE UNIQUE INDEX IF NOT EXISTS one_active_domain ON domain_connections (is_active) WHERE is_active;
+
+-- 노드별 LLM 호출 1건당 토큰 사용량. run_id는 runs.run_id를 참조할 수도, CLI/eval 실행처럼
+-- registry가 없는 ad-hoc uuid일 수도 있어 FK는 걸지 않는다.
+-- tags가 KPI 비교의 핵심 — 예: {"schema_rag_mode":"rag"} vs {"schema_rag_mode":"full_dump"}로
+-- 태깅해 GROUP BY tags->>'schema_rag_mode'로 전/후 비교한다 (data-access-copilot-plan.md 참고,
+-- B단계 KPI 인프라 추가분).
+CREATE TABLE IF NOT EXISTS token_usage (
+  id            BIGSERIAL PRIMARY KEY,
+  run_id        UUID,
+  node          TEXT NOT NULL,
+  model         TEXT NOT NULL,
+  input_tokens  INTEGER NOT NULL,
+  output_tokens INTEGER NOT NULL,
+  tags          JSONB NOT NULL DEFAULT '{}',
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS token_usage_run_idx  ON token_usage (run_id);
+CREATE INDEX IF NOT EXISTS token_usage_tags_idx ON token_usage USING GIN (tags);
+
+-- 그래프 1회 실행(invoke)의 결과 요약. 정확도/성공률/재시도횟수 같은 "답변 품질" 축.
+CREATE TABLE IF NOT EXISTS run_metrics (
+  id          BIGSERIAL PRIMARY KEY,
+  run_id      UUID,
+  domain      TEXT NOT NULL,
+  question    TEXT NOT NULL,
+  status      TEXT NOT NULL,
+  error_code  TEXT,
+  retries     INTEGER NOT NULL DEFAULT 0,
+  row_count   INTEGER,
+  sql         TEXT,
+  latency_ms  INTEGER,
+  tags        JSONB NOT NULL DEFAULT '{}',
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS run_metrics_tags_idx ON run_metrics USING GIN (tags);
