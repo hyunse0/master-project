@@ -59,26 +59,93 @@ export interface SelfCorrectionSummary {
   by_error_code: SelfCorrectionByErrorCode[]
 }
 
-export interface TokenCostGroup {
-  tag_value: string | null
-  total_tokens: number
-  calls: number
-  avg_latency_ms: number
-  success_rate: number | null
-  runs: number
+export interface GoldenSetLastRun {
+  run_id: string
+  ok: boolean
+  generated_sql: string | null
+  created_at: string
 }
 
-export interface TokenCostComparison {
+export interface GoldenSetCase {
+  question: string
+  expected_sql: string
+  last_run: GoldenSetLastRun | null
+}
+
+export interface GoldenSetList {
   domain: string | null
-  experiment: string
-  compare_key: string
-  groups: TokenCostGroup[]
+  cases: GoldenSetCase[]
+}
+
+export interface ExecutionAccuracyJob {
+  status: 'running' | 'done' | 'error'
+  done: number
+  total: number
+  last_question: string | null
+  result: {
+    skipped: boolean
+    reason: string | null
+    total: number
+    correct: number
+    accuracy: number | null
+    schema_mapping: { precision: number; recall: number; f1: number } | null
+    faithfulness: { total: number; faithful: number; ratio: number | null } | null
+  } | null
+  error: string | null
+  started_at: string
+  finished_at: string | null
+}
+
+export interface ExecutionAccuracyJobStart {
+  status: 'started' | 'already_running'
+  job: ExecutionAccuracyJob
+}
+
+export interface ExecutionAccuracyJobStatus {
+  job: ExecutionAccuracyJob | null
+}
+
+export interface SelfCorrectionJob {
+  status: 'running' | 'done' | 'error'
+  done: number
+  total: number
+  last_question: string | null
+  last_outcome: string | null
+  result: {
+    skipped: boolean
+    reason: string | null
+    total: number
+    outcomes: Record<string, number>
+    corrected_by_first_error: Record<string, number>
+    still_failed_by_first_error: Record<string, number>
+  } | null
+  error: string | null
+  started_at: string
+  finished_at: string | null
+}
+
+export interface SelfCorrectionJobStart {
+  status: 'started' | 'already_running'
+  job: SelfCorrectionJob
+}
+
+export interface SelfCorrectionJobStatus {
+  job: SelfCorrectionJob | null
 }
 
 async function getJSON<T>(path: string): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`)
   if (!res.ok) {
     throw new Error(`${path} 요청 실패: ${res.status}`)
+  }
+  return res.json() as Promise<T>
+}
+
+async function postJSON<T>(path: string): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, { method: 'POST' })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(body?.detail ?? `${path} 요청 실패: ${res.status}`)
   }
   return res.json() as Promise<T>
 }
@@ -105,6 +172,17 @@ export const evalApi = {
   selfCorrection: (domain?: string) =>
     getJSON<SelfCorrectionSummary>(`/eval/self-correction${buildQuery({ domain })}`),
 
-  tokenCost: (params: { domain?: string; experiment: string; compare_key: string }) =>
-    getJSON<TokenCostComparison>(`/eval/token-cost${buildQuery(params)}`),
+  goldenSet: (domain?: string) => getJSON<GoldenSetList>(`/eval/golden-set${buildQuery({ domain })}`),
+
+  runExecutionAccuracy: (domain: string) =>
+    postJSON<ExecutionAccuracyJobStart>(`/eval/execution-accuracy/run${buildQuery({ domain })}`),
+
+  executionAccuracyStatus: (domain: string) =>
+    getJSON<ExecutionAccuracyJobStatus>(`/eval/execution-accuracy/run-status${buildQuery({ domain })}`),
+
+  runSelfCorrection: (domain: string) =>
+    postJSON<SelfCorrectionJobStart>(`/eval/self-correction/run${buildQuery({ domain })}`),
+
+  selfCorrectionStatus: (domain: string) =>
+    getJSON<SelfCorrectionJobStatus>(`/eval/self-correction/run-status${buildQuery({ domain })}`),
 }

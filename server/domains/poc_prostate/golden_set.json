@@ -1,0 +1,78 @@
+[
+  {
+    "question": "전립선암 환자는 총 몇 명인가요?",
+    "expected_sql": "SELECT COUNT(DISTINCT s_patno) FROM poc.poc_prostate_patient_info"
+  },
+  {
+    "question": "연령대별 전립선암 환자 수를 알려줘",
+    "expected_sql": "SELECT age_10_sect_nm, COUNT(DISTINCT s_patno) AS patient_count FROM poc.poc_prostate_patient_info GROUP BY age_10_sect_nm ORDER BY age_10_sect_nm"
+  },
+  {
+    "question": "암종 소분류별 환자 분포를 보여줘",
+    "expected_sql": "SELECT crcn_sm_nm, COUNT(DISTINCT s_patno) AS patient_count FROM poc.poc_prostate_patient_info GROUP BY crcn_sm_nm ORDER BY patient_count DESC"
+  },
+  {
+    "question": "다중암 여부에 따른 환자 수를 알려줘",
+    "expected_sql": "SELECT multi_cancer_yn, COUNT(DISTINCT s_patno) AS patient_count FROM poc.poc_prostate_patient_info GROUP BY multi_cancer_yn ORDER BY multi_cancer_yn"
+  },
+  {
+    "question": "수술 종류별 건수를 알려줘",
+    "expected_sql": "SELECT inhosp_op_eng_nm, COUNT(*) AS op_count FROM poc.poc_prostate_op GROUP BY inhosp_op_eng_nm ORDER BY op_count DESC"
+  },
+  {
+    "question": "응급수술 건수는 몇 건인가요?",
+    "expected_sql": "SELECT COUNT(*) FROM poc.poc_prostate_op WHERE emrcy_op_yn = 'Y'"
+  },
+  {
+    "question": "집도과별 수술 건수를 알려줘",
+    "expected_sql": "SELECT opdp_cd, COUNT(*) AS op_count FROM poc.poc_prostate_op GROUP BY opdp_cd ORDER BY op_count DESC"
+  },
+  {
+    "question": "Gleason Grade Group별 검사 건수를 보여줘",
+    "expected_sql": "SELECT grade_group, COUNT(*) AS exam_count FROM poc.poc_prostate_path GROUP BY grade_group ORDER BY exam_count DESC"
+  },
+  {
+    "question": "병리 검사 결과 등급 분포를 알려줘",
+    "expected_sql": "SELECT score, COUNT(*) AS exam_count FROM poc.poc_prostate_path GROUP BY score ORDER BY score"
+  },
+  {
+    "question": "혈액검사 코드별 검사 건수를 알려줘",
+    "expected_sql": "SELECT ordr_cd, COUNT(*) AS exam_count FROM poc.poc_prostate_blood GROUP BY ordr_cd ORDER BY exam_count DESC"
+  },
+  {
+    "question": "처방코드별 검사 건수를 보여줘",
+    "expected_sql": "SELECT ordr_cd, COUNT(*) AS exam_count FROM poc.poc_prostate_blood GROUP BY ordr_cd ORDER BY exam_count DESC"
+  },
+  {
+    "question": "환자별 수술 이력과 병리 검사 결과를 함께 보여줘",
+    "expected_sql": "SELECT po.s_patno, po.op_dt, po.inhosp_op_eng_nm, pp.gleason, pp.t_gleason, pp.grade_group FROM poc.poc_prostate_op po JOIN poc.poc_prostate_path pp ON po.s_patno = pp.s_patno ORDER BY po.s_patno, po.op_dt"
+  },
+  {
+    "question": "연령대별로 어떤 수술 종류가 가장 많았는지 알려줘",
+    "expected_sql": "WITH counts AS (SELECT pi.age_10_sect_nm, po.inhosp_op_eng_nm, COUNT(*) AS op_count, ROW_NUMBER() OVER (PARTITION BY pi.age_10_sect_nm ORDER BY COUNT(*) DESC) AS rn FROM poc.poc_prostate_patient_info pi JOIN poc.poc_prostate_op po ON pi.s_patno = po.s_patno GROUP BY pi.age_10_sect_nm, po.inhosp_op_eng_nm) SELECT age_10_sect_nm, inhosp_op_eng_nm, op_count FROM counts WHERE rn = 1 ORDER BY age_10_sect_nm"
+  },
+  {
+    "question": "응급수술을 받은 환자의 Gleason Grade Group 분포를 알려줘",
+    "expected_sql": "SELECT pp.grade_group, COUNT(DISTINCT po.s_patno) AS patient_count FROM poc.poc_prostate_op po JOIN poc.poc_prostate_path pp ON po.s_patno = pp.s_patno WHERE po.emrcy_op_yn = 'Y' GROUP BY pp.grade_group ORDER BY pp.grade_group"
+  },
+  {
+    "question": "로봇수술을 받은 후 PSA 수치가 다시 0.2 이상으로 오른 생화학적 재발 환자들의 수술 종류와 최초 생검 Gleason Grade Group을 함께 보여줘",
+    "expected_sql": "SELECT po.s_patno, po.inhosp_op_eng_nm, pp.grade_group FROM poc.poc_prostate_op po JOIN poc.poc_prostate_path pp ON po.s_patno = pp.s_patno WHERE po.inhosp_op_eng_nm IN ('Robot-assisted Radical Prostatectomy', 'Robotic Radical Prostatectomy (da Vinci)', 'Robot-assisted Laparoscopic Radical Prostatectomy') AND EXISTS (SELECT 1 FROM poc.poc_prostate_blood pb WHERE pb.s_patno = po.s_patno AND pb.ordr_cd = 'PSA001' AND TO_DATE(pb.ordr_direct_dt, 'YYYYMMDD') > TO_DATE(po.op_dt, 'YYYYMMDD') AND pb.mark_rslt_val::numeric >= 0.2) ORDER BY po.s_patno"
+  },
+  {
+    "question": "응급수술을 받았고 병기가 III기 이상이며 호르몬 치료제를 처방받은 환자를 모두 보여줘",
+    "expected_sql": "SELECT DISTINCT po.s_patno, pi.dis_stage, po.inhosp_op_eng_nm FROM poc.poc_prostate_op po JOIN poc.poc_prostate_patient_info pi ON po.s_patno = pi.s_patno JOIN poc.poc_ooodmordr od ON od.s_patno = po.s_patno WHERE po.emrcy_op_yn = 'Y' AND pi.dis_stage IN ('III', 'IV') AND od.ordr_cd IN ('ADT001', 'ADT002') ORDER BY po.s_patno"
+  },
+  {
+    "question": "Gleason Grade Group 5 비율이 가장 높은 연령대와 그 비율을 알려줘",
+    "expected_sql": "WITH ratios AS (SELECT pi.age_10_sect_nm, COUNT(*) FILTER (WHERE pp.grade_group = '5') AS grade5_count, COUNT(*) AS total_count FROM poc.poc_prostate_patient_info pi JOIN poc.poc_prostate_path pp ON pi.s_patno = pp.s_patno GROUP BY pi.age_10_sect_nm) SELECT age_10_sect_nm, grade5_count, total_count, ROUND(grade5_count::numeric / total_count, 4) AS grade5_ratio FROM ratios ORDER BY grade5_ratio DESC LIMIT 1"
+  },
+  {
+    "question": "골반 CT 또는 MRI에서 양성 소견이 나왔고 병기가 III기 이상인 환자의 최초 생검 Gleason 점수를 함께 보여줘",
+    "expected_sql": "SELECT DISTINCT sr.s_patno, pi.dis_stage, pp.score FROM poc.poc_sslrdexrt sr JOIN poc.poc_prostate_patient_info pi ON sr.s_patno = pi.s_patno JOIN poc.poc_prostate_path pp ON sr.s_patno = pp.s_patno WHERE sr.exam_cd IN ('CT001', 'MRI001') AND sr.mark_rslt_val = 'Positive' AND pi.dis_stage IN ('III', 'IV') ORDER BY sr.s_patno"
+  },
+  {
+    "question": "전신골스캔 또는 PET에서 골전이가 의심된 환자 중 응급수술 이력이 있는 환자는 몇 명인가요?",
+    "expected_sql": "SELECT COUNT(DISTINCT sn.s_patno) FROM poc.poc_ssnudexrt sn WHERE sn.exam_cd IN ('BONE001', 'PET001') AND sn.mark_rslt_val = 'Positive' AND EXISTS (SELECT 1 FROM poc.poc_prostate_op po WHERE po.s_patno = sn.s_patno AND po.emrcy_op_yn = 'Y')"
+  }
+]

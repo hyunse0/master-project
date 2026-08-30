@@ -1,12 +1,14 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { domainApi } from '../../api/domainClient'
 import {
   evalApi,
   type ExecutionAccuracy,
+  type ExecutionAccuracyJob,
   type FaithfulnessSummary,
+  type GoldenSetList,
   type SchemaMappingAccuracy,
+  type SelfCorrectionJob,
   type SelfCorrectionSummary,
-  type TokenCostComparison,
 } from '../../api/evalClient'
 import { formatRelativeTime } from '../history/relativeTime'
 
@@ -30,64 +32,32 @@ const ERROR_CODE_LABEL: Record<string, string> = {
   UNSAFE_SQL: 'SQL 실행 오류',
 }
 
-interface TokenComparisonConfig {
-  title: string
-  experiment: string
-  compareKey: string
-  beforeTag: string
-  afterTag: string
-  beforeLabel: string
-  afterLabel: string
-}
-
-// eval/token_cost_comparison.py를 --experiment 없이 돌리면 f"{key}_ablation"이 기본 실험명이 된다
-// (eval/token_cost_comparison.py 참고) — 그 기본값을 그대로 따라간다.
-const TOKEN_COMPARISONS: TokenComparisonConfig[] = [
-  {
-    title: '① 스키마 전체 덤프 vs Qdrant 검색',
-    experiment: 'schema_rag_mode_ablation',
-    compareKey: 'schema_rag_mode',
-    beforeTag: 'full_dump',
-    afterTag: 'rag',
-    beforeLabel: '전체 스키마 덤프',
-    afterLabel: 'Qdrant 스키마 검색',
-  },
-  {
-    title: '② 난이도 라우팅 off vs on',
-    experiment: 'routing_mode_ablation',
-    compareKey: 'routing_mode',
-    beforeTag: 'off',
-    afterTag: 'on',
-    beforeLabel: '단일 저비용 모델 고정',
-    afterLabel: '난이도별 모델 분기',
-  },
-]
-
-function fmt(n: number): string {
-  return n.toLocaleString()
-}
-
 function accuracyColor(ratio: number): string {
   if (ratio >= 0.85) return 'var(--success)'
   if (ratio >= 0.7) return 'var(--accent)'
   return '#c99a2e'
 }
 
-interface Props {
-  onOpenRunInHistory: (runId: string) => void
-}
-
-export function EvalTab({ onOpenRunInHistory }: Props) {
+export function EvalTab() {
   const [domain, setDomain] = useState<string | null>(null)
   const [executionAccuracy, setExecutionAccuracy] = useState<ExecutionAccuracy | null>(null)
   const [schemaMapping, setSchemaMapping] = useState<SchemaMappingAccuracy | null>(null)
   const [faithfulness, setFaithfulness] = useState<FaithfulnessSummary | null>(null)
   const [selfCorrection, setSelfCorrection] = useState<SelfCorrectionSummary | null>(null)
-  const [tokenComparisons, setTokenComparisons] = useState<TokenCostComparison[]>([])
+  const [goldenSet, setGoldenSet] = useState<GoldenSetList | null>(null)
+  const [accuracyJob, setAccuracyJob] = useState<ExecutionAccuracyJob | null>(null)
+  const [runError, setRunError] = useState<string | null>(null)
+  const pollRef = useRef<number | null>(null)
+  const [scJob, setScJob] = useState<SelfCorrectionJob | null>(null)
+  const [scRunError, setScRunError] = useState<string | null>(null)
+  const scPollRef = useRef<number | null>(null)
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [expandedFailure, setExpandedFailure] = useState<string | null>(null)
+  const [expandedGolden, setExpandedGolden] = useState<number | null>(null)
+  const [goldenPanelOpen, setGoldenPanelOpen] = useState(false)
+  const [faithFailuresOpen, setFaithFailuresOpen] = useState(false)
 
   const loadAll = useCallback(() => {
     setLoading(true)
@@ -103,30 +73,136 @@ export function EvalTab({ onOpenRunInHistory }: Props) {
           evalApi.schemaMappingAccuracy(domainName ?? undefined),
           evalApi.faithfulness(domainName ?? undefined),
           evalApi.selfCorrection(domainName ?? undefined),
-          Promise.all(
-            TOKEN_COMPARISONS.map((c) =>
-              evalApi.tokenCost({ domain: domainName ?? undefined, experiment: c.experiment, compare_key: c.compareKey }),
-            ),
-          ),
+          evalApi.goldenSet(domainName ?? undefined),
         ])
       })
-      .then(([acc, mapping, faith, sc, tokenCosts]) => {
+      .then(([acc, mapping, faith, sc, golden]) => {
         setExecutionAccuracy(acc)
         setSchemaMapping(mapping)
         setFaithfulness(faith)
         setSelfCorrection(sc)
-        setTokenComparisons(tokenCosts)
+        setGoldenSet(golden)
       })
       .catch((e) => setError(e instanceof Error ? e.message : '평가 지표 조회 실패'))
       .finally(() => setLoading(false))
   }, [])
 
+  const stopPolling = useCallback(() => {
+    if (pollRef.current !== null) {
+      window.clearInterval(pollRef.current)
+      pollRef.current = null
+    }
+  }, [])
+
+  const startPolling = useCallback(
+    (domainName: string) => {
+      if (pollRef.current !== null) return
+      pollRef.current = window.setInterval(() => {
+        evalApi
+          .executionAccuracyStatus(domainName)
+          .then(({ job }) => {
+            setAccuracyJob(job)
+            if (!job || job.status !== 'running') {
+              stopPolling()
+              if (job?.status === 'done') loadAll()
+            }
+          })
+          .catch(() => stopPolling())
+      }, 2000)
+    },
+    [loadAll, stopPolling],
+  )
+
   useEffect(() => {
     loadAll()
-  }, [loadAll])
+    return () => stopPolling()
+  }, [loadAll, stopPolling])
 
-  const hasGolden = (executionAccuracy?.overall.total ?? 0) > 0 || (schemaMapping?.overall?.total ?? 0) > 0
-  const goldenCaseCount = executionAccuracy?.overall.total ?? schemaMapping?.overall?.total ?? 0
+  // 탭을 다시 열었을 때 이미 돌고 있는 job이 있으면(다른 탭/이전 방문에서 시작) 그 진행률에 이어붙는다.
+  useEffect(() => {
+    if (!domain) return
+    evalApi
+      .executionAccuracyStatus(domain)
+      .then(({ job }) => {
+        if (job?.status === 'running') {
+          setAccuracyJob(job)
+          startPolling(domain)
+        }
+      })
+      .catch(() => {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [domain])
+
+  const handleRunAccuracy = useCallback(() => {
+    if (!domain) return
+    setRunError(null)
+    evalApi
+      .runExecutionAccuracy(domain)
+      .then(({ job }) => {
+        setAccuracyJob(job)
+        startPolling(domain)
+      })
+      .catch((e) => setRunError(e instanceof Error ? e.message : '실행 시작 실패'))
+  }, [domain, startPolling])
+
+  const stopScPolling = useCallback(() => {
+    if (scPollRef.current !== null) {
+      window.clearInterval(scPollRef.current)
+      scPollRef.current = null
+    }
+  }, [])
+
+  const startScPolling = useCallback(
+    (domainName: string) => {
+      if (scPollRef.current !== null) return
+      scPollRef.current = window.setInterval(() => {
+        evalApi
+          .selfCorrectionStatus(domainName)
+          .then(({ job }) => {
+            setScJob(job)
+            if (!job || job.status !== 'running') {
+              stopScPolling()
+              if (job?.status === 'done') loadAll()
+            }
+          })
+          .catch(() => stopScPolling())
+      }, 2000)
+    },
+    [loadAll, stopScPolling],
+  )
+
+  useEffect(() => stopScPolling, [stopScPolling])
+
+  // 탭을 다시 열었을 때 이미 돌고 있는 self-correction job이 있으면 진행률에 이어붙는다.
+  useEffect(() => {
+    if (!domain) return
+    evalApi
+      .selfCorrectionStatus(domain)
+      .then(({ job }) => {
+        if (job?.status === 'running') {
+          setScJob(job)
+          startScPolling(domain)
+        }
+      })
+      .catch(() => {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [domain])
+
+  const handleRunSelfCorrection = useCallback(() => {
+    if (!domain) return
+    setScRunError(null)
+    evalApi
+      .runSelfCorrection(domain)
+      .then(({ job }) => {
+        setScJob(job)
+        startScPolling(domain)
+      })
+      .catch((e) => setScRunError(e instanceof Error ? e.message : '실행 시작 실패'))
+  }, [domain, startScPolling])
+
+  const goldenCases = goldenSet?.cases ?? []
+  const hasGolden = goldenCases.length > 0
+  const goldenCaseCount = goldenCases.length
   const lastRunAt = executionAccuracy?.overall.last_run_at ?? null
 
   const sortedAccuracy = [...(executionAccuracy?.groups ?? [])]
@@ -236,12 +312,102 @@ export function EvalTab({ onOpenRunInHistory }: Props) {
                   <span className="status-field-value">{lastRunAt ? formatRelativeTime(lastRunAt) : '—'}</span>
                 </div>
                 <div className="status-spacer" />
-                <p className="eval-panel-desc" style={{ maxWidth: 340 }}>
-                  {hasGolden
-                    ? '정답률과 스키마 매핑 정확도는 이 골든셋을 기준으로 계산됩니다.'
-                    : '정답률·스키마 매핑 정확도 섹션은 안내 상태로 표시됩니다. 요약 충실도와 Self-correction 귀인은 골든셋 없이도 집계됩니다.'}
-                </p>
+                <button
+                  className="btn-secondary"
+                  style={{ padding: '4px 10px', fontSize: 10.5, flexShrink: 0 }}
+                  disabled={!domain || !hasGolden || accuracyJob?.status === 'running'}
+                  onClick={handleRunAccuracy}
+                >
+                  {accuracyJob?.status === 'running'
+                    ? `실행 중… ${accuracyJob.done}/${accuracyJob.total || goldenCaseCount}`
+                    : '지금 실행'}
+                </button>
               </div>
+              {accuracyJob?.status === 'running' && accuracyJob.last_question && (
+                <p className="eval-panel-desc" style={{ marginTop: 10 }}>지금 실행 중: {accuracyJob.last_question}</p>
+              )}
+              {runError && (
+                <p className="eval-panel-desc" style={{ marginTop: 10, color: 'var(--danger-text)' }}>{runError}</p>
+              )}
+              {accuracyJob?.status === 'error' && (
+                <p className="eval-panel-desc" style={{ marginTop: 10, color: 'var(--danger-text)' }}>
+                  실행 실패: {accuracyJob.error}
+                </p>
+              )}
+            </section>
+
+            {/* 골든셋 목록 */}
+            <section className="panel">
+              <div
+                className="panel-head"
+                style={{ cursor: 'pointer' }}
+                onClick={() => setGoldenPanelOpen((v) => !v)}
+              >
+                <h2>골든셋 목록</h2>
+                <span className="panel-count" style={{ fontWeight: 400 }}>
+                  {goldenCaseCount}건
+                </span>
+                <span className="panel-endpoint">GET /eval/golden-set</span>
+                <span className="eval-faith-chevron">{goldenPanelOpen ? '⌄' : '›'}</span>
+              </div>
+
+              {goldenPanelOpen && (goldenCases.length === 0 ? (
+                <div className="panel-empty">
+                  golden_set.json이 없습니다.
+                  <br />
+                  domains/{domain ?? '&lt;domain&gt;'}/golden_set.json을 [{'{'}"question", "expected_sql"{'}'}] 형식으로
+                  작성하세요.
+                </div>
+              ) : (
+                <>
+                  <div className="eval-faith-head" style={{ gridTemplateColumns: '1fr auto auto' }}>
+                    <span>질문</span>
+                    <span>마지막 실행</span>
+                    <span />
+                  </div>
+                  {goldenCases.map((c, i) => {
+                    const open = expandedGolden === i
+                    const last = c.last_run
+                    return (
+                      <div className="eval-faith-row" key={c.question}>
+                        <div
+                          className="eval-faith-row-top"
+                          style={{ gridTemplateColumns: '1fr auto auto' }}
+                          onClick={() => setExpandedGolden(open ? null : i)}
+                        >
+                          <span className="eval-faith-q">{c.question}</span>
+                          {last ? (
+                            <span className={`run-status-badge status-${last.ok ? 'success' : 'error'}`}>
+                              {last.ok ? 'OK' : 'FAIL'} · {formatRelativeTime(last.created_at)}
+                            </span>
+                          ) : (
+                            <span className="eval-faith-reason">아직 실행 안 함</span>
+                          )}
+                          <span className="eval-faith-chevron">{open ? '⌄' : '›'}</span>
+                        </div>
+
+                        {open && (
+                          <div className="eval-faith-detail">
+                            <span className="eval-faith-detail-label">정답 SQL (expected_sql)</span>
+                            <pre className="sql-view-box" style={{ margin: 0 }}>
+                              {c.expected_sql}
+                            </pre>
+
+                            {last?.generated_sql && (
+                              <>
+                                <span className="eval-faith-detail-label">마지막 생성 SQL</span>
+                                <pre className="sql-view-box" style={{ margin: 0 }}>
+                                  {last.generated_sql}
+                                </pre>
+                              </>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </>
+              ))}
             </section>
 
             <div className="eval-grid">
@@ -295,7 +461,7 @@ export function EvalTab({ onOpenRunInHistory }: Props) {
                   <span className="panel-endpoint">GET /eval/schema-mapping-accuracy</span>
                 </div>
                 <p className="eval-panel-desc" style={{ padding: '0 20px' }}>
-                  SQL은 틀려도 테이블은 제대로 골랐는지를 재는 중간 지표입니다.
+                  SQL이 틀리더라도 테이블은 제대로 골랐는지를 재는 중간 지표입니다.
                 </p>
 
                 {mappingCards.length === 0 ? (
@@ -321,7 +487,6 @@ export function EvalTab({ onOpenRunInHistory }: Props) {
                 <span className="panel-count" style={{ fontWeight: 400 }}>
                   Faithfulness
                 </span>
-                <span className="eval-badge">골든셋 불필요</span>
                 <span className="panel-endpoint">GET /eval/faithfulness</span>
               </div>
               <p className="eval-panel-desc" style={{ padding: '0 20px 14px' }}>
@@ -357,13 +522,17 @@ export function EvalTab({ onOpenRunInHistory }: Props) {
                     <div className="panel-empty">판정 실패 사례가 없습니다.</div>
                   ) : (
                     <>
-                      <div className="eval-faith-head">
+                      <div
+                        className="eval-faith-head"
+                        style={{ cursor: 'pointer' }}
+                        onClick={() => setFaithFailuresOpen((v) => !v)}
+                      >
                         <span>질문</span>
                         <span>생성된 요약문</span>
                         <span>판정 사유</span>
-                        <span />
+                        <span className="eval-faith-chevron">{faithFailuresOpen ? '⌄' : '›'}</span>
                       </div>
-                      {faithfulness!.failures.map((f) => {
+                      {faithFailuresOpen && faithfulness!.failures.map((f) => {
                         const open = expandedFailure === f.run_id
                         const cols = f.columns ?? []
                         const rows = f.rows ?? []
@@ -409,19 +578,6 @@ export function EvalTab({ onOpenRunInHistory }: Props) {
                                     ))}
                                   </div>
                                 )}
-                                <div className="eval-faith-detail-footer">
-                                  <span className="eval-faith-run-label">run #{f.run_id.slice(0, 6)}</span>
-                                  <div style={{ flex: 1 }} />
-                                  <a
-                                    href="#"
-                                    onClick={(e) => {
-                                      e.preventDefault()
-                                      onOpenRunInHistory(f.run_id)
-                                    }}
-                                  >
-                                    실행 히스토리에서 보기 →
-                                  </a>
-                                </div>
                               </div>
                             )}
                           </div>
@@ -433,15 +589,39 @@ export function EvalTab({ onOpenRunInHistory }: Props) {
               )}
             </section>
 
-            {/* Self-correction 귀인 */}
+            {/* Self-correction */}
             <section className="panel">
               <div className="panel-head">
-                <h2>Self-correction 귀인</h2>
+                <h2>Self-correction</h2>
+                <button
+                  className="btn-secondary"
+                  style={{ padding: '4px 10px', fontSize: 10.5, flexShrink: 0 }}
+                  disabled={!domain || scJob?.status === 'running'}
+                  onClick={handleRunSelfCorrection}
+                >
+                  {scJob?.status === 'running' ? `실행 중… ${scJob.done}/${scJob.total || '?'}` : '지금 실행'}
+                </button>
                 <span className="panel-endpoint">GET /eval/self-correction</span>
               </div>
               <p className="eval-panel-desc" style={{ padding: '0 20px 14px' }}>
                 재시도 루프가 어떤 실패 유형에 강한지 보여줍니다.
+                {scJob?.status === 'running' && scJob.last_question && (
+                  <>
+                    <br />
+                    지금 실행 중: {scJob.last_question}
+                  </>
+                )}
               </p>
+              {scRunError && (
+                <p className="eval-panel-desc" style={{ padding: '0 20px 14px', color: 'var(--danger-text)' }}>
+                  {scRunError}
+                </p>
+              )}
+              {scJob?.status === 'error' && (
+                <p className="eval-panel-desc" style={{ padding: '0 20px 14px', color: 'var(--danger-text)' }}>
+                  실행 실패: {scJob.error}
+                </p>
+              )}
 
               {scTotal === 0 ? (
                 <div className="panel-empty">
@@ -508,97 +688,6 @@ export function EvalTab({ onOpenRunInHistory }: Props) {
                   )}
                 </div>
               )}
-            </section>
-
-            {/* 토큰/비용 비교 */}
-            <section className="panel">
-              <div className="panel-head">
-                <h2>토큰 / 비용 비교</h2>
-                <span className="panel-count" style={{ fontWeight: 400 }}>
-                  비용 대시보드와 동일한 전/후 비교 카드
-                </span>
-                <span className="panel-endpoint">GET /eval/token-cost</span>
-              </div>
-
-              <div style={{ padding: '4px 20px 20px', display: 'flex', flexDirection: 'column', gap: 22 }}>
-                {TOKEN_COMPARISONS.map((cfg, i) => {
-                  const groups = tokenComparisons[i]?.groups ?? []
-                  const before = groups.find((g) => g.tag_value === cfg.beforeTag)
-                  const after = groups.find((g) => g.tag_value === cfg.afterTag)
-                  const max = Math.max(before?.total_tokens ?? 0, after?.total_tokens ?? 0, 1)
-                  const savePct =
-                    before && after && before.total_tokens > 0
-                      ? Math.round((1 - after.total_tokens / before.total_tokens) * 100)
-                      : null
-
-                  return (
-                    <div className="eval-token-block" key={cfg.experiment}>
-                      <div className="eval-token-block-head">
-                        <span className="title">{cfg.title}</span>
-                        <span className="source">experiment={cfg.experiment}</span>
-                      </div>
-
-                      {!before && !after ? (
-                        <div className="panel-empty">
-                          비교 데이터가 없습니다. eval/token_cost_comparison.py --domain {domain ?? '&lt;domain&gt;'} --compare{' '}
-                          {cfg.compareKey}={cfg.beforeTag},{cfg.afterTag} --experiment {cfg.experiment} 를 실행하세요.
-                        </div>
-                      ) : (
-                        <div className="eval-token-body">
-                          <div className="cost-ablation-list" style={{ flex: '1 1 400px' }}>
-                            {[
-                              { g: before, tag: 'BEFORE', tagClass: 'before', label: cfg.beforeLabel },
-                              { g: after, tag: 'AFTER', tagClass: 'after', label: cfg.afterLabel },
-                            ].map(({ g, tag, tagClass, label }) =>
-                              g ? (
-                                <div className="cost-ablation-row" key={tag}>
-                                  <div className="cost-ablation-top">
-                                    <span className={`cost-ablation-tag ${tagClass}`}>{tag}</span>
-                                    <span className="cost-ablation-label">{label}</span>
-                                    <div style={{ flex: 1 }} />
-                                    <span className={`cost-ablation-value ${tagClass}`}>{fmt(g.total_tokens)}</span>
-                                    <span style={{ fontSize: 11, color: 'var(--ink-mute)' }}>tok</span>
-                                  </div>
-                                  <div className="cost-ablation-bar-track">
-                                    <div
-                                      className={`cost-ablation-bar-fill ${tagClass}`}
-                                      style={{ width: `${(g.total_tokens / max) * 100}%` }}
-                                    />
-                                  </div>
-                                  <span className="cost-ablation-meta">
-                                    {g.calls} calls · {g.runs} runs
-                                    {g.success_rate != null ? ` · 성공률 ${Math.round(g.success_rate * 100)}%` : ''}
-                                  </span>
-                                </div>
-                              ) : (
-                                <div className="cost-ablation-row" key={tag}>
-                                  <span className="cost-ablation-meta">{tag} 데이터 없음</span>
-                                </div>
-                              ),
-                            )}
-                          </div>
-
-                          {savePct !== null && (
-                            <div className={`cost-savings-card ${savePct < 0 ? 'negative' : ''}`}>
-                              <span className="cost-savings-label">{savePct >= 0 ? '토큰 절감' : '토큰 증가'}</span>
-                              <div className="cost-savings-value">
-                                <span className="arrow">{savePct >= 0 ? '▾' : '▴'}</span>
-                                <span className="num">{Math.abs(savePct)}</span>
-                                <span className="pct">%</span>
-                              </div>
-                              <span className="cost-savings-note">
-                                {fmt(Math.abs((before?.total_tokens ?? 0) - (after?.total_tokens ?? 0)))} tok
-                                <br />
-                                {savePct >= 0 ? '절감' : '증가'} (실측)
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
             </section>
           </>
         )}

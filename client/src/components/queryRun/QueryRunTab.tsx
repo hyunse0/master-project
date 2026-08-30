@@ -61,8 +61,6 @@ export function QueryRunTab() {
     setSubmitError(null)
   }
 
-  const showProgress = phase !== 'idle'
-
   const onToggleGate = (key: 'schema' | 'sql') => {
     setPendingCfg((c) => ({ ...c, [key]: !c[key] }))
   }
@@ -99,48 +97,46 @@ export function QueryRunTab() {
 
         {(submitError || error) && <div className="run-error-banner">{submitError ?? error}</div>}
 
-        {showProgress && (
-          <section className="progress-card">
-            <div className="progress-head">
-              <h2>진행 상태</h2>
-              <span className={`run-status-badge status-${isRunning ? 'fetching' : phase}`}>
-                {statusLabel(phase)}
-              </span>
-              {result && result.retries > 0 && (
-                <span className="retry-badge">
-                  검증 재시도 {result.retries}/{result.max_retries}
-                </span>
-              )}
-              <div className="header-spacer" />
-              <span className="review-config-label">
-                review_config {`{ schema: ${cfg.schema}, sql: ${cfg.sql} }`}
-              </span>
-            </div>
-
-            {result && (
-              <div className="intent-summary-row">
-                <span className="review-section-label">1단계 결과 · INTENT</span>
-                {result.difficulty && <span className="pill pill-difficulty">난이도 {result.difficulty}</span>}
-                {result.task_type && <span className="pill">{result.task_type}</span>}
-              </div>
-            )}
-
-            <StageRail
-              stages={stages}
-              cfg={cfg}
-              onToggleGate={onToggleGate}
-              selectedNo={viewedStageNo}
-              onSelect={onSelectStage}
-            />
-
+        <section className="progress-card">
+          <div className="progress-head">
+            <h2>진행 상태</h2>
+            <span className={`run-status-badge status-${isRunning ? 'fetching' : phase}`}>
+              {statusLabel(phase)}
+            </span>
             {result && result.retries > 0 && (
-              <div className="retry-note">
-                ↺ 검증/생성 재시도 {result.retries}회 발생 — 최종적으로{' '}
-                {result.status === 'success' ? '통과했습니다.' : '실패했습니다.'}
-              </div>
+              <span className="retry-badge">
+                검증 재시도 {result.retries}/{result.max_retries}
+              </span>
             )}
-          </section>
-        )}
+            <div className="header-spacer" />
+            <span className="review-config-label">
+              review_config {`{ schema: ${cfg.schema}, sql: ${cfg.sql} }`}
+            </span>
+          </div>
+
+          {result && (
+            <div className="intent-summary-row">
+              <span className="review-section-label">1단계 결과 · INTENT</span>
+              {result.difficulty && <span className="pill pill-difficulty">난이도 {result.difficulty}</span>}
+              {result.task_type && <span className="pill">{result.task_type}</span>}
+            </div>
+          )}
+
+          <StageRail
+            stages={stages}
+            cfg={cfg}
+            onToggleGate={onToggleGate}
+            selectedNo={viewedStageNo}
+            onSelect={onSelectStage}
+          />
+
+          {result && result.retries > 0 && (
+            <div className="retry-note">
+              ↺ 검증/생성 재시도 {result.retries}회 발생 — 최종적으로{' '}
+              {result.status === 'success' ? '통과했습니다.' : '실패했습니다.'}
+            </div>
+          )}
+        </section>
 
         {showSnapshot && viewedStageNo && result && (
           <StageSnapshotCard

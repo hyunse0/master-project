@@ -8,6 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Work directly on `main` — don't create separate branches.
 - Check the docs under `docs/` first for anything design-related.
 - Don't edit source directly on request — propose the change and get the user's sign-off first.
+- The project is now in an iterate-and-improve phase, not initial build-out. Any change that could plausibly move the agent's accuracy, cost, latency, or UX (prompt/guidance wording, retrieval or routing logic, retry/validation rules, graph structure, new sub-agents or tools) gets logged as an experiment in `docs/kpi-experiment-log.md` using its template — **including attempts that turn out to have no effect and get reverted**; those are exactly what the log is for. Pure refactors/typo fixes with no behavioral effect don't need an entry.
 
 ## Project
 
@@ -120,5 +121,7 @@ This project is a from-scratch rebuild that reuses selected pieces from the sibl
 
 - `docs/data-access-copilot-plan.md` — full build plan: scope tiers, reuse mapping from `rag-practice`, directory structure, the interrupt/resume design (section 5), and the vertical-slice implementation order (section 6: A. data layer → B. core pipeline → C. human-in-the-loop → D. cost/observability → E. multi-agent → F. MCP exposure → H. eval)
 - `docs/agent-spec.md` — agent behavior spec
-- `docs/kpi-schema-rag-mode-ablation.md` — KPI ablation results
+- `docs/kpi-experiment-log.md` — running log of every improvement attempt (hypothesis, change, measurement, result, adopted/reverted) since the iterate-and-improve phase started; log new experiments here as you make them
+- `docs/kpi-schema-rag-mode-ablation.md` — KPI ablation results (first entry in the experiment log above)
+- `docs/agent-current-state.md` — current implementation snapshot (pipeline flow, screen-by-screen user journeys, gaps vs. the plan) plus a step-by-step verification checklist
 - `docs/screen-spec.html` — UI design brief

@@ -9,6 +9,12 @@ golden_set.json(정답 SQL)이 필요 없다 — benchmark_queries.json(질문�
 판정은 LLM judge 방식: {question, columns, rows, 요약문}을 저비용 모델에 주고
 {"faithful": true|false, "reason": "..."}로 응답받는다. 규칙 기반(숫자 매칭)보다 비용은
 들지만 잘못된 항목/방향성 오류까지 잡아낼 수 있어 이 방식을 택함(사용자 확인 완료).
+
+extract_summary_section()/judge_faithfulness()는 execution_accuracy.run()도 그대로
+가져다 쓴다 — golden_set.json 기준 "지금 실행"이 그래프를 이미 돌린 김에 같은 state로
+요약 충실도까지 함께 판정해서 그래프 재실행(=LLM 재호출) 없이 세 지표를 한 번에 낸다.
+이 스크립트 자체는 golden_set.json 없이 benchmark_queries.json만으로도 독립적으로 계속
+동작한다 — 골든셋이 없는 도메인에서도 요약 충실도만은 잴 수 있어야 하기 때문.
 """
 import argparse
 import json
@@ -44,7 +50,7 @@ faithful=true입니다. 결과에 없는 숫자를 인용했거나, 결과와 �
 """
 
 
-def _extract_summary_section(full_summary: str) -> str:
+def extract_summary_section(full_summary: str) -> str:
     """execution 노드가 조립한 "## 요약\\n...\\n## SQL\\n..." 블록에서 요약 부분만 뽑는다.
 
     ## SQL/## 결과 블록까지 judge에게 그대로 주면 결과 원문이 요약문 안에 있는 것처럼
@@ -64,7 +70,7 @@ def _rows_text(columns: list[str], rows: list[dict], limit: int = 20) -> str:
     return f"{header}\n{sep}\n{body}"
 
 
-def _judge(llm: TokenCountingLLM, run_id: str, question: str, columns: list[str], rows: list[dict], summary_text: str) -> dict:
+def judge_faithfulness(llm: TokenCountingLLM, run_id: str, question: str, columns: list[str], rows: list[dict], summary_text: str) -> dict:
     prompt = _JUDGE_PROMPT.format(
         question=question,
         columns=", ".join(columns),
@@ -121,8 +127,8 @@ def main() -> None:
             print(f"  [SKIP] {q['question']} — 파이프라인 실행 실패(요약 자체가 없음)")
             continue
 
-        summary_text = _extract_summary_section(state.get("summary") or "")
-        verdict = _judge(judge_llm, run_id, q["question"], state.get("columns") or [], state.get("rows") or [], summary_text)
+        summary_text = extract_summary_section(state.get("summary") or "")
+        verdict = judge_faithfulness(judge_llm, run_id, q["question"], state.get("columns") or [], state.get("rows") or [], summary_text)
 
         if verdict["faithful"] is None:
             print(f"  [ERR ] {q['question']} — {verdict['reason']}")

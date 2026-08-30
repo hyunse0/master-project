@@ -393,7 +393,7 @@ function App() {
             onCandidateCountChange={setFewshotCandidateCount}
           />
         )}
-        {view === 'eval' && <EvalTab onOpenRunInHistory={openRunInHistory} />}
+        {view === 'eval' && <EvalTab />}
         {view === 'cost' && <CostDashboard onOpenRunInHistory={openRunInHistory} />}
         {view === 'mcp' && <McpIntegration />}
         {view === 'domain' && (

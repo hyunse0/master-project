@@ -12,6 +12,11 @@ golden_set.json 불필요 — benchmark_queries.json으로 충분(정답을 몰�
 각 질문을 graph.stream()으로 실행하며 retry_count가 올라갈 때마다 그 시점의
 retry_error_code를 기록한다(graph.invoke()는 최종 state만 주므로 중간 실패 이력을
 알 수 없음 — 계획 문서 section 5.6과 동일하게 trace성 정보는 그래프 밖에서 수집).
+
+run()이 실제 평가 로직이고 main()은 CLI 출력용 얇은 래퍼다 — execution_accuracy.py와 같은
+이유로 app/api/eval_routes.py의 "지금 실행" 버튼도 run()을 그대로 재사용한다. graph.stream()을
+써야 해서(execution_accuracy.run()의 graph.invoke() 기반 골든셋 루프와는 별개) 같은 루프에
+합치지 않고 독립된 job으로 둔다.
 """
 import argparse
 import json
@@ -19,9 +24,10 @@ import sys
 import uuid
 from collections import Counter
 from pathlib import Path
+from typing import Callable
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from app.domain.loader import get_domain  # noqa: E402
+from app.domain.loader import DomainConfig, get_domain  # noqa: E402
 from app.graph.build import build_graph  # noqa: E402
 from app.observability import run_logger  # noqa: E402
 
@@ -62,34 +68,37 @@ def _outcome(final_state: dict) -> str:
     return "still_failed"
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--domain", required=True)
-    parser.add_argument("--limit", type=int, default=None, help="검사할 질문 수 제한(기본 전체)")
-    args = parser.parse_args()
+def run(
+    domain: DomainConfig,
+    limit: int | None = None,
+    on_case: Callable[[int, int, str, str], None] | None = None,
+) -> dict:
+    """benchmark_queries.json 전체를 graph.stream()으로 돌려 재시도 귀인을 집계한다.
 
-    domain = get_domain(args.domain)
+    on_case(index, total, question, outcome)가 있으면 항목이 끝날 때마다 호출한다(1-based index).
+    """
     if not domain.benchmark_queries_path.is_file():
-        print(f"[{args.domain}] benchmark_queries.json 없음 ({domain.benchmark_queries_path}) — 스킵")
-        return
+        return {"skipped": True, "reason": "benchmark_queries_missing", "total": 0}
 
     queries = json.loads(domain.benchmark_queries_path.read_text())
-    if args.limit:
-        queries = queries[: args.limit]
+    if limit:
+        queries = queries[:limit]
+    if not queries:
+        return {"skipped": True, "reason": "benchmark_queries_empty", "total": 0}
+
     graph = build_graph(domain)
+    total = len(queries)
 
     outcome_counts: Counter = Counter()
     corrected_by_first_error: Counter = Counter()
     still_failed_by_first_error: Counter = Counter()
 
-    for q in queries:
+    for i, q in enumerate(queries, start=1):
         run_id = str(uuid.uuid4())
         final_state, history = _run_with_history(graph, domain.name, q["question"], run_id)
         outcome = _outcome(final_state)
         outcome_counts[outcome] += 1
         first_error = history[0] if history else None
-
-        print(f"  [{outcome}] {q['question']}  (retries={final_state.get('retry_count', 0)}, history={history})")
 
         if outcome == "corrected_by_retry" and first_error:
             corrected_by_first_error[first_error] += 1
@@ -111,7 +120,44 @@ def main() -> None:
             },
         )
 
-    total = len(queries)
+        if on_case:
+            on_case(i, total, q["question"], outcome)
+
+    return {
+        "skipped": False,
+        "reason": None,
+        "total": total,
+        "outcomes": dict(outcome_counts),
+        "corrected_by_first_error": dict(corrected_by_first_error),
+        "still_failed_by_first_error": dict(still_failed_by_first_error),
+    }
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--domain", required=True)
+    parser.add_argument("--limit", type=int, default=None, help="검사할 질문 수 제한(기본 전체)")
+    args = parser.parse_args()
+
+    domain = get_domain(args.domain)
+
+    def on_case(i: int, total: int, question: str, outcome: str) -> None:
+        print(f"  [{outcome}] ({i}/{total}) {question}")
+
+    result = run(domain, limit=args.limit, on_case=on_case)
+
+    if result["skipped"]:
+        if result["reason"] == "benchmark_queries_missing":
+            print(f"[{args.domain}] benchmark_queries.json 없음 ({domain.benchmark_queries_path}) — 스킵")
+        else:
+            print("benchmark_queries.json이 비어있습니다.")
+        return
+
+    total = result["total"]
+    outcome_counts = result["outcomes"]
+    corrected_by_first_error = result["corrected_by_first_error"]
+    still_failed_by_first_error = result["still_failed_by_first_error"]
+
     print(f"\nSelf-Correction 귀인 (n={total}):")
     for outcome in ("first_try_success", "corrected_by_retry", "still_failed"):
         count = outcome_counts.get(outcome, 0)
@@ -119,7 +165,7 @@ def main() -> None:
 
     if corrected_by_first_error:
         print("\n  재시도로 고쳐진 실패 유형별 건수:")
-        for code, count in corrected_by_first_error.most_common():
+        for code, count in sorted(corrected_by_first_error.items(), key=lambda kv: -kv[1]):
             total_for_code = count + still_failed_by_first_error.get(code, 0)
             print(f"    {code}: {count}/{total_for_code} 교정됨")
 

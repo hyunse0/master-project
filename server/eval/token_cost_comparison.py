@@ -1,9 +1,22 @@
-"""KPI 비교 러너 — 같은 벤치마크 질의셋을 여러 태그 조합으로 돌려 토큰/지연시간/성공률을 비교한다.
+"""KPI 비교 러너 — 같은 벤치마크 질의셋을 여러 태그 값으로 돌려 토큰/지연시간/성공률을 비교한다.
 
-이 스크립트가 "이 기능을 추가했더니 성능/비용이 이렇게 좋아졌다"는 자료의 원천이다.
-사용:
-  python eval/token_cost_comparison.py --domain poc_prostate --compare schema_rag_mode=rag,full_dump
-  python eval/token_cost_comparison.py --domain poc_prostate --compare max_retries=0,2
+이 스크립트가 "이 기능을 추가했더니 성능/비용이 이렇게 좋아졌다"는 자료의 원천이다. 두 가지
+사용 패턴이 있다 — 어느 쪽이든 최종 비교는 _print_comparison()이 그때그때 DB에 쌓인 걸 다시
+읽어서 보여주므로(방금 이 실행에서 나온 값만 보는 게 아님), 두 패턴을 섞어 써도 된다.
+
+1) 런타임에 tags 값으로 분기하는 기존 기능(schema_rag_mode, routing_mode 등) A/B — 값 두 개를
+   콤마로 같이 주면 한 번의 실행으로 둘 다 돌리고 바로 비교까지 나온다:
+     python eval/token_cost_comparison.py --domain poc_prostate --compare schema_rag_mode=rag,full_dump
+
+2) 프롬프트 문구 수정처럼 "코드 자체를 바꾸는" 개선 — tags로 토글할 수 없으니 코드 변경 전/후에
+   각각 한 번씩 따로 돌린다. 비교축 이름은 자유지만 관례로 phase=before/after를 쓴다. 같은
+   --experiment(=kpi-experiment-log.md의 실험 ID)로 묶어야 두 번의 실행이 하나의 비교표로 합쳐진다:
+     python eval/token_cost_comparison.py --domain poc_prostate --compare phase=before --experiment EXP-002
+     # ...코드 변경...
+     python eval/token_cost_comparison.py --domain poc_prostate --compare phase=after --experiment EXP-002
+   재실행 없이 지금까지 쌓인 비교표만 다시 보고 싶으면 --report-only(실행 없이 phase 아무 값이나
+   하나 넘겨서 key만 지정):
+     python eval/token_cost_comparison.py --domain poc_prostate --compare phase=after --experiment EXP-002 --report-only
 """
 import argparse
 import json
@@ -27,9 +40,17 @@ def _parse_compare(spec: str) -> tuple[str, list[str]]:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--domain", required=True)
-    parser.add_argument("--compare", required=True, help="예: schema_rag_mode=rag,full_dump")
-    parser.add_argument("--experiment", default=None)
+    parser.add_argument("--compare", required=True, help="예: schema_rag_mode=rag,full_dump 또는 phase=before")
+    parser.add_argument("--experiment", default=None, help="비교표를 묶을 이름 — before/after 두 번 실행할 땐 반드시 같은 값을 줘야 한다")
+    parser.add_argument("--report-only", action="store_true", help="새로 실행하지 않고 지금까지 쌓인 비교표만 다시 출력")
     args = parser.parse_args()
+
+    key, values = _parse_compare(args.compare)
+    experiment = args.experiment or f"{key}_ablation"
+
+    if args.report_only:
+        _print_comparison(experiment, key)
+        return
 
     domain = get_domain(args.domain)
     if not domain.benchmark_queries_path.is_file():
@@ -37,9 +58,6 @@ def main() -> None:
         return
 
     queries = json.loads(domain.benchmark_queries_path.read_text())
-    key, values = _parse_compare(args.compare)
-    experiment = args.experiment or f"{key}_ablation"
-
     graph = build_graph(domain)
 
     for raw_value in values:
