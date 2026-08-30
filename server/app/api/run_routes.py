@@ -151,29 +151,31 @@ class ResumeRequest(BaseModel):
     correction_reason: str | None = None
 
 
-@router.post("")
-def create_run(body: RunRequest) -> dict:
-    try:
-        domain = get_domain(body.domain)
-    except ValueError as e:
-        raise HTTPException(400, str(e))
+def execute_run(question: str, domain_name: str | None, review_config: dict | None = None) -> dict:
+    """도메인 resolve → graph 자동 실행 → 최종 상태 반환.
+
+    create_run(HTTP)과 app/api/mcp.py의 run_nl2sql_query tool이 공유하는 핵심 실행 경로다.
+    HTTP 프레임워크에 묶이지 않도록 예외는 ValueError(도메인 문제) 또는 RuntimeError(그래프
+    초기화/실행 실패)로만 던지고, HTTP 상태코드로의 변환은 호출부(create_run)에서 한다.
+    """
+    domain = get_domain(domain_name)
 
     try:
         graph = _get_graph(domain.name)
     except Exception as e:
-        raise HTTPException(502, f"그래프 초기화 실패: {e}")
+        raise RuntimeError(f"그래프 초기화 실패: {e}") from e
 
     run_id = str(uuid.uuid4())
-    review_config = body.review_config or _DEFAULT_REVIEW_CONFIG
+    review_config = review_config or _DEFAULT_REVIEW_CONFIG
     tags = _DEFAULT_TAGS
 
-    run_manager.create(run_id, domain.name, body.question, review_config)
+    run_manager.create(run_id, domain.name, question, review_config)
 
     t0 = time.time()
     try:
         graph.invoke(
             {
-                "question": body.question,
+                "question": question,
                 "domain": domain.name,
                 "run_id": run_id,
                 "tags": tags,
@@ -183,11 +185,21 @@ def create_run(body: RunRequest) -> dict:
         )
     except Exception as e:
         logger.exception("run 실행 실패")
-        _mark_crashed(run_id, domain.name, body.question, review_config, e)
-        raise HTTPException(502, f"파이프라인 실행 실패: {e}")
+        _mark_crashed(run_id, domain.name, question, review_config, e)
+        raise RuntimeError(f"파이프라인 실행 실패: {e}") from e
     latency_ms = int((time.time() - t0) * 1000)
 
-    return _finalize(graph, run_id, domain.name, body.question, review_config, tags, latency_ms)
+    return _finalize(graph, run_id, domain.name, question, review_config, tags, latency_ms)
+
+
+@router.post("")
+def create_run(body: RunRequest) -> dict:
+    try:
+        return execute_run(body.question, body.domain, body.review_config)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except RuntimeError as e:
+        raise HTTPException(502, str(e))
 
 
 @router.get("")

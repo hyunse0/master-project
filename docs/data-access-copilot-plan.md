@@ -265,7 +265,27 @@ B의 그래프 골격에 노드만 추가하는 구조라 C·D와 독립적으�
 
 ### F. MCP 노출 (Tier2, 백엔드만)
 C의 FastAPI 도구 함수가 있어야 래핑할 대상이 생기므로 C 완료 후. 외부 클라이언트용이라 자체 프론트 화면 불필요.
-10. **MCP 서버 노출**: `app/api/mcp.py` — 기존 FastAPI 도구 함수(스키마 조회/SQL 실행/few-shot 검색 등)를 MCP tool로 래핑
+
+**전송 방식**: 별도 stdio 프로세스가 아니라 **기존 FastAPI 프로세스에 서브마운트**한다 — `mcp.streamable_http_app()`을 `app.main`에서 `/mcp`로 `app.mount()`. `_graph_cache`/embedder 싱글톤을 그대로 재사용할 수 있고 프로세스 관리가 늘지 않는다는 게 이유. 구현 시 주의점: `FastMCP`의 streamable-http 앱은 자체 lifespan(세션 매니저)이 있어서, 부모 `FastAPI(lifespan=...)`에 그 lifespan을 같이 걸어주지 않으면 `/mcp` 요청이 걸려있게 된다.
+
+**노출 tool (5개)** — 전부 읽기이거나 이미 검증된 실행 경로만 래핑한다:
+
+| tool | 재사용 대상 | 비고 |
+|---|---|---|
+| `get_domain_status()` | `domain_routes.domain_status` | 그대로 |
+| `list_tables()` | `domain_routes.list_tables` | 그대로 |
+| `get_table_detail(table_name)` | `domain_routes.table_detail` | 그대로 |
+| `search_schema(query, limit=5)` | `domain_routes.schema_search` | 그대로 |
+| `search_few_shot_examples(question, top_k=3, domain=None)` | `SqlRetriever` + `QdrantFewShotStore` | REST엔 없던 신규 조합 — `query_tables=[]`로 호출해 semantic+domain 스코어만 사용 |
+| `run_nl2sql_query(question, domain=None)` | `run_routes` 내부 실행 로직(아래 참고) | MCP에서는 `review_config`를 항상 `{"schema": False, "sql": False}`로 고정 — 단발 tool 호출로는 interrupt/resume을 받을 수 없어 애초에 자동 모드만 지원 |
+
+**의도적으로 뺀 것 — "SQL 직접 실행" tool**: 스펙 전체가 "검증 게이트(SqlValidator/schema citation/value anchor)를 통과한 SQL만 실행"인 구조인데, raw SQL을 MCP에 노출하면 그 게이트를 완전히 우회하는 구멍이 생긴다. `run_nl2sql_query`가 질문→(내부적으로 스키마링킹/생성/검증/실행 전체 파이프라인)→결과를 돌려주는 유일한 실행 경로다.
+
+**작은 리팩터링 필요**: `run_routes.create_run`은 지금 "도메인 resolve → graph 호출 → `_finalize`"가 한 함수 안에 있어 HTTP 계층과 분리돼 있지 않다. MCP tool에서 이 로직을 중복 작성하지 않도록 `execute_run(question, domain_name, review_config, tags) -> dict`를 추출해 `create_run`(HTTP)과 MCP tool이 함께 호출하도록 한다 (동작 변경 없는 순수 리팩터링).
+
+**파일 변경**: `server/requirements.txt`(`mcp` 추가), `server/app/api/mcp.py`(신규 — `FastMCP` 인스턴스 + tool 5개), `server/app/api/run_routes.py`(`execute_run` 추출), `server/app/main.py`(`/mcp` 서브마운트 + lifespan 배선).
+
+10. **MCP 서버 노출 (완료)**: `app/api/mcp.py`(`MCPServer` + tool 6개 — `get_domain_status`/`list_tables`/`get_table_detail`/`search_schema`/`search_few_shot_examples`/`run_nl2sql_query`), `run_routes.py`에서 `execute_run()` 추출, `main.py`에서 `/mcp` 서브마운트 + lifespan 배선. mcp 파이썬 SDK가 2.x에서 `FastMCP`→`MCPServer`로 개명되고 클라이언트 헬퍼도 `streamablehttp_client`→`streamable_http_client`로 바뀌어 있었음(설치된 `mcp==2.1.1` 기준으로 반영). 실제 `mcp` 클라이언트(`streamable_http_client`+`ClientSession`)로 로컬 uvicorn(`/mcp`)에 접속해 6개 tool 전체 호출 검증 완료 — `list_tables`/`get_domain_status`/`search_schema`/`get_table_detail`은 활성 도메인(`poc_prostate`)에서 정상 응답, `search_few_shot_examples`는 유사 예제 검색 확인, `run_nl2sql_query`("전립선암 환자는 총 몇 명인가요?")는 스키마링킹→SQL생성→검증→실행 전 과정을 거쳐 정답(8명)까지 확인. `execute_run` 추출 후 기존 REST `POST /runs`도 동일 응답으로 회귀 없음 확인.
 
 ### H. 평가
 D·E·G가 만든 지표/화면을 모두 사용하므로 마지막.
@@ -291,5 +311,5 @@ RBAC은 별도 구현 단계 없음 — 필요 시 `client`에 역할 선택 드
 - 6~7b단계 후: React 화면에서 실제로 질의 실행 → 스키마 후보 검토/체크 해제 → 승인 → SQL 검토/수정 → 승인 → 결과 확인까지 end-to-end로 수동 테스트 (프로토타입 HTML과 나란히 놓고 동일 시나리오 시각적/기능적 비교)
 - 8~8b단계 후: golden set을 난이도 라우팅 on/off로 각각 돌려 비용/정확도 차이 확보하고 `CostDashboard`에 반영되는지 확인
 - 9~9b단계 후: 질의유형별(집계/리스트/코호트) 골든셋 서브셋으로 서브에이전트 분기가 올바르게 타는지, `StageRail`에 뱃지가 표시되는지 확인
-- 10단계 후: MCP 클라이언트(예: `mcp inspector` 또는 Claude Desktop)로 노출된 tool 호출 테스트
+- 10단계 후 (완료): `uvicorn app.main:app` 기동 → mcp 파이썬 클라이언트(`streamable_http_client`+`ClientSession`)로 `http://localhost:8000/mcp` 접속 → `list_tools()`로 6개 tool 노출 확인, 6개 전체 개별 호출해 REST 대응 엔드포인트와 같은 필드 구조로 응답하는지 확인, `run_nl2sql_query`는 실제 SQL 실행까지 end-to-end 확인. `execute_run` 추출 후 `POST /runs`가 기존과 동일하게 동작하는지 별도 확인
 - 12~12b단계 후: 토큰 비교/비용-정확도 실험 결과를 `GoldenSetPanel`/표·그래프로 정리해 발표 자료용 수치 확보

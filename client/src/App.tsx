@@ -4,11 +4,12 @@ import { fewshotApi } from './api/fewshotClient'
 import { CostDashboard } from './components/cost/CostDashboard'
 import { FewShotTab } from './components/fewshot/FewShotTab'
 import { HistoryTab } from './components/history/HistoryTab'
+import { McpIntegration } from './components/mcp/McpIntegration'
 import { QueryRunTab } from './components/queryRun/QueryRunTab'
 import './App.css'
 
 type Phase = 'loading' | 'connected' | 'error'
-type View = 'query' | 'domain' | 'history' | 'fewshot' | 'cost'
+type View = 'query' | 'domain' | 'history' | 'fewshot' | 'cost' | 'mcp'
 
 const NAV_GROUPS: { label: string; items: { label: string; view?: View; soon: boolean; badgeKey?: 'fewshotCandidates' }[] }[] = [
   {
@@ -26,6 +27,7 @@ const NAV_GROUPS: { label: string; items: { label: string; view?: View; soon: bo
       { label: '검토 정책', soon: true },
       { label: 'Golden Set 평가', soon: true },
       { label: '비용 대시보드', view: 'cost', soon: false },
+      { label: 'MCP 연동', view: 'mcp', soon: false },
     ],
   },
 ]
@@ -391,6 +393,7 @@ function App() {
           />
         )}
         {view === 'cost' && <CostDashboard onOpenRunInHistory={openRunInHistory} />}
+        {view === 'mcp' && <McpIntegration />}
         {view === 'domain' && (
           <>
             <header className="page-header">
