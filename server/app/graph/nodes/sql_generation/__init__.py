@@ -2,6 +2,11 @@
 
 SchemaCitation/ValueAnchor/SqlValidator 검증과 실행은 validation_node/execution_node로
 분리돼 있다(rag-practice SqlGenPipeline._generation_loop를 노드 단위로 쪼갠 것).
+
+질의유형(aggregate/list/cohort)별 전문 프롬프트 조각은 이 패키지의 형제 모듈
+(aggregate.py/list.py/cohort.py)에서 GUIDANCE 상수로 가져와 prompt_builder에 주입한다 —
+few-shot 검색·LLM 호출·retry 처리 같은 오케스트레이션은 유형과 무관하게 이 파일에서
+공유한다(그래프 노드는 sql_generation 하나로 유지, 계획 문서 E그룹 "그래프 골격 재사용").
 """
 import logging
 import re
@@ -16,7 +21,16 @@ from app.sql.canonicalizer import build_embedding_text
 from app.sql.prompt_builder import SqlPromptBuilder
 from app.sql.retriever import RetrievedExample, SqlRetriever
 
+from . import aggregate, cohort, list_type
+
 logger = logging.getLogger(__name__)
+
+_GUIDANCE_BY_QUERY_TYPE: dict[str, str] = {
+    "aggregate": aggregate.GUIDANCE,
+    "list": list_type.GUIDANCE,
+    "cohort": cohort.GUIDANCE,
+}
+_DEFAULT_QUERY_TYPE = "list"
 
 
 def make_sql_generation_node(
@@ -29,7 +43,8 @@ def make_sql_generation_node(
     def sql_generation_node(state: GraphState) -> dict:
         run_id = state["run_id"]
         difficulty = state.get("difficulty")
-        tags = {**(state.get("tags") or {}), "difficulty": difficulty}
+        query_type = state.get("query_type") or _DEFAULT_QUERY_TYPE
+        tags = {**(state.get("tags") or {}), "difficulty": difficulty, "query_type": query_type}
         llm = select_llm(llm_router, difficulty)
         is_first_attempt = state.get("retry_count", 0) == 0
 
@@ -48,6 +63,7 @@ def make_sql_generation_node(
             metric=state.get("metric", ""),
             dimensions=state.get("dimensions") or [],
             time_range=state.get("time_range") or {},
+            type_guidance=_GUIDANCE_BY_QUERY_TYPE.get(query_type, list_type.GUIDANCE),
         )
         raw = llm.generate(prompt, run_id=run_id, node="sql_generation", tags=tags)
 

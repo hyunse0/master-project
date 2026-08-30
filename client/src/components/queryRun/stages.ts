@@ -104,8 +104,12 @@ export function computeStages(phase: Phase, cfg: ReviewCfg, result: RunResult | 
 function stageMeta(no: string, result: RunResult | null): string {
   if (!result) return ''
   switch (no) {
-    case '1':
-      return result.difficulty ? `난이도 ${result.difficulty}` : ''
+    case '1': {
+      const parts: string[] = []
+      if (result.difficulty) parts.push(`난이도 ${result.difficulty}`)
+      if (result.query_type) parts.push(`유형 ${result.query_type}`)
+      return parts.join(' · ')
+    }
     case '2':
       return `후보 ${result.schema_candidates.length}건`
     case '3':

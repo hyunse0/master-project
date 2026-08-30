@@ -12,6 +12,7 @@ export interface RunResult {
   question: string
   review_config: ReviewConfig
   difficulty: 'easy' | 'medium' | 'hard' | null
+  query_type: 'aggregate' | 'list' | 'cohort' | null
   task_type: string | null
   schema_candidates: string[]
   schema_candidate_details: SchemaCandidateDetail[]

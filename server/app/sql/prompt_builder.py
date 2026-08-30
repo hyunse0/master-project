@@ -107,6 +107,7 @@ class SqlPromptBuilder:
         metric:      str         = "",
         dimensions:  list[str]   | None = None,
         time_range:  dict        | None = None,
+        type_guidance: str | None = None,
     ) -> str:
         parts = [_SYSTEM_PROMPT]
 
@@ -129,6 +130,9 @@ class SqlPromptBuilder:
             intent_lines.append(f"time_range: {from_} ~ {to_}  (grain={grain})")
         if intent_lines:
             parts.append("\n\n[의도 분석]\n" + "\n".join(intent_lines))
+
+        if type_guidance:
+            parts.append(f"\n\n[질의 유형 가이드]\n{type_guidance}")
 
         if examples:
             parts.append("\n\n[유사 예제]")

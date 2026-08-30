@@ -1,8 +1,9 @@
-"""자연어 질문을 분류해 task_type/metric/dimensions/time_range/난이도를 추출한다.
+"""자연어 질문을 분류해 task_type/metric/dimensions/time_range/난이도/질의유형을 추출한다.
 
 rag-practice/server/retrieval/router.py의 "pipeline: sql" 분기 JSON 스키마만 이식했다 —
 이 앱은 SQL 전용이라 chat/rag/refuse 파이프라인 분기는 가져오지 않았다. difficulty 필드는
-Tier1(토큰 이코노미·난이도별 모델 라우팅) 요구사항으로 새로 추가됐다.
+Tier1(토큰 이코노미·난이도별 모델 라우팅) 요구사항으로, query_type 필드는 Tier2(멀티에이전트
+확장 — sql_generation의 유형별 서브에이전트 분기) 요구사항으로 추가됐다.
 """
 import json
 import logging
@@ -32,7 +33,11 @@ _INTENT_PROMPT = """\
   "difficulty": "질의 복잡도 — 아래 기준으로 분류:
     easy   — 단일 테이블 단순 집계/조회 (예: 총 환자 수)
     medium — 그룹핑·필터가 있는 조회, 2개 이하 테이블 조인
-    hard   — 3개 이상 테이블 조인, 서브쿼리, 코호트 정의, 복합 조건"
+    hard   — 3개 이상 테이블 조인, 서브쿼리, 코호트 정의, 복합 조건",
+  "query_type": "질의 유형 — 아래 기준으로 분류:
+    aggregate — 집계 함수/GROUP BY가 필요한 질문 (건수, 평균, 합계, 분포, 비율)
+    list      — 조건에 맞는 개별 레코드를 나열/조회하는 질문
+    cohort    — 여러 포함/제외 조건을 조합해 특정 대상군(예: 환자군)을 정의하는 질문"
 }}
 
 사용자 질문: {query}
@@ -69,6 +74,7 @@ def make_intent_node(llm: TokenCountingLLM):
             "time_range": time_range,
             "table_hints": data.get("table_hints", []),
             "difficulty": data.get("difficulty", "medium"),
+            "query_type": data.get("query_type", "list"),
             "retry_count": 0,
         }
 

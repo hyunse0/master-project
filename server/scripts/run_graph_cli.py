@@ -73,7 +73,7 @@ def main() -> None:
     final_state, status, latency_ms = run_once(args.domain, args.question, tags)
 
     print(f"\n=== status={status}  latency={latency_ms}ms  retries={final_state.get('retry_count', 0)} ===")
-    print(f"difficulty={final_state.get('difficulty')}  task_type={final_state.get('task_type')}")
+    print(f"difficulty={final_state.get('difficulty')}  query_type={final_state.get('query_type')}  task_type={final_state.get('task_type')}")
     print(f"schema_candidates={final_state.get('schema_candidates')}")
     print(f"\nSQL:\n{final_state.get('sql')}")
     if final_state.get("execution_error"):

@@ -56,7 +56,7 @@ def _mark_crashed(run_id: str, domain_name: str, question: str, review_config: d
         {
             "run_id": run_id, "status": "error", "domain": domain_name, "question": question,
             "review_config": review_config,
-            "difficulty": None, "task_type": None,
+            "difficulty": None, "query_type": None, "task_type": None,
             "schema_candidates": [], "schema_candidate_details": [], "confirmed_schema": [],
             "sql": None, "columns": [], "rows": [], "row_count": None, "summary": None,
             "execution_error": str(error),
@@ -113,6 +113,7 @@ def _finalize(
         "question": question,
         "review_config": review_config,
         "difficulty": values.get("difficulty"),
+        "query_type": values.get("query_type"),
         "task_type": values.get("task_type"),
         "schema_candidates": values.get("schema_candidates") or [],
         "schema_candidate_details": values.get("schema_candidate_details") or [],
