@@ -7,9 +7,10 @@ export interface SchemaCandidateDetail {
 
 export interface RunResult {
   run_id: string
-  status: 'success' | 'error'
+  status: 'interrupted_schema' | 'interrupted_sql' | 'success' | 'error'
   domain: string
   question: string
+  review_config: ReviewConfig
   difficulty: 'easy' | 'medium' | 'hard' | null
   task_type: string | null
   schema_candidates: string[]

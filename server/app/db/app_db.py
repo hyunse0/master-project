@@ -22,3 +22,17 @@ def get_app_db_connection() -> PgConnection:
         user=os.environ.get("APP_DB_USER", "postgres"),
         password=os.environ.get("APP_DB_PASSWORD", "postgres"),
     )
+
+
+def get_app_db_conninfo() -> str:
+    """app-db 접속정보를 psycopg(v3) conninfo 문자열로 반환한다.
+
+    get_app_db_connection()과 같은 env를 읽는다 — LangGraph PostgresSaver의
+    ConnectionPool(psycopg v3 기반)이 이 문자열을 쓴다(app/graph/checkpointer.py).
+    """
+    host = os.environ.get("APP_DB_HOST", "localhost")
+    port = os.environ.get("APP_DB_PORT", "5433")
+    dbname = os.environ.get("APP_DB_NAME", "nl2sql_app")
+    user = os.environ.get("APP_DB_USER", "postgres")
+    password = os.environ.get("APP_DB_PASSWORD", "postgres")
+    return f"postgresql://{user}:{password}@{host}:{port}/{dbname}"

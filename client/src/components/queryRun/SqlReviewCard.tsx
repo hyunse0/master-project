@@ -4,10 +4,21 @@ interface Props {
   retries: number
   runId: string
   refTables: string[]
+  retryErrorCode: string | null
+  retryFeedback: string | null
   onApprove: () => void
 }
 
-export function SqlReviewCard({ sql, onChange, retries, runId, refTables, onApprove }: Props) {
+export function SqlReviewCard({
+  sql,
+  onChange,
+  retries,
+  runId,
+  refTables,
+  retryErrorCode,
+  retryFeedback,
+  onApprove,
+}: Props) {
   const lineCount = sql.split('\n').length
 
   return (
@@ -21,7 +32,14 @@ export function SqlReviewCard({ sql, onChange, retries, runId, refTables, onAppr
       </div>
 
       <div className="review-card-body">
-        {retries > 0 && (
+        {retryErrorCode && (
+          <div className="review-retry-box danger">
+            <span className="review-retry-box-title">이전 승인이 검증/실행에 실패해 되돌아왔습니다 ({retryErrorCode})</span>
+            <span className="review-retry-box-detail">{retryFeedback ?? '상세 정보 없음'}</span>
+          </div>
+        )}
+
+        {!retryErrorCode && retries > 0 && (
           <div className="review-retry-box">
             <span className="review-retry-box-title">생성 과정 참고</span>
             <span className="review-retry-box-detail">
@@ -44,11 +62,6 @@ export function SqlReviewCard({ sql, onChange, retries, runId, refTables, onAppr
           rows={13}
           spellCheck={false}
         />
-
-        <p className="review-preview-note">
-          여기서 수정해도 실제 재검증에는 반영되지 않습니다 — 아래 승인 시 원래 실행 결과가 표시됩니다
-          (재검증 연동은 C 단계에서 구현됩니다).
-        </p>
 
         <div className="review-card-actions">
           <span className="review-selected-label">참조 테이블 {refTables.join(', ') || '없음'}</span>

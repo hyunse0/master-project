@@ -19,6 +19,11 @@ CREATE TABLE IF NOT EXISTS runs (
 
 CREATE INDEX IF NOT EXISTS runs_domain_created_idx ON runs (domain, created_at DESC);
 
+-- 매 invoke/resume 직후 API 응답 전체를 여기 캐싱한다. GET /runs/{id}는 LangGraph
+-- 체크포인터를 다시 읽지 않고 이 값만 반환 — "존재하지 않는 run"(행 없음)과 "이미 끝난 run"
+-- 구분도 이 컬럼 하나로 처리된다(C단계, data-access-copilot-plan.md section 5).
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS state_snapshot JSONB NOT NULL DEFAULT '{}';
+
 -- 타겟 도메인 접속정보. 실서비스에서는 사용자가 화면으로 직접 입력하는 값이라 .env가 아니라
 -- 여기 저장한다. db_password_enc는 평문이 아니라 app/db/encryption.py(Fernet, APP_SECRET_KEY)로
 -- 암호화된 바이트 — 앱 레벨에서 암복호화하며, DB 안에서 키를 다루지 않는다(쿼리 로그 노출 방지).

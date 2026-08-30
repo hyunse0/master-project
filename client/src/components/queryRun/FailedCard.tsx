@@ -9,11 +9,10 @@ const STAGE_NAME: Record<number, string> = {
 
 interface Props {
   result: RunResult
-  onEditSql: () => void
   onRestart: () => void
 }
 
-export function FailedCard({ result, onEditSql, onRestart }: Props) {
+export function FailedCard({ result, onRestart }: Props) {
   const checks = buildChecks(result)
   const stageIdx = failedStageIndex(result.retry_error_code)
   const stageName = STAGE_NAME[stageIdx] ?? '실행'
@@ -42,9 +41,6 @@ export function FailedCard({ result, onEditSql, onRestart }: Props) {
           ))}
         </div>
         <div className="failed-card-actions">
-          <button className="btn-primary" onClick={onEditSql} disabled={!result.sql}>
-            SQL 직접 수정
-          </button>
           <button className="btn-danger-outline" onClick={onRestart}>
             처음부터 다시 실행
           </button>

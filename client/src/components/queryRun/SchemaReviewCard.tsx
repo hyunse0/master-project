@@ -39,10 +39,6 @@ export function SchemaReviewCard({ candidates, checked, onToggle, onCancel, onAp
           })}
         </div>
 
-        <p className="review-preview-note">
-          체크 상태는 화면 미리보기용입니다 — 실제 재검증 연동(interrupt/resume)은 C 단계에서 구현됩니다.
-        </p>
-
         <div className="review-card-actions">
           <span className="review-selected-label">
             {selectedCount} / {candidates.length}개 테이블 선택

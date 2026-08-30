@@ -1,21 +1,22 @@
 import type { RunResult } from '../../types'
 
 export type StageStatus = 'idle' | 'done' | 'waiting' | 'running' | 'failed' | 'skipped'
-export type RunningPhase =
-  | 'running_intent'
-  | 'running_schema'
-  | 'running_sql'
-  | 'running_validate'
-  | 'running_exec'
+
+// POST /runs·resume은 동기 호출이라 한 번의 요청이 여러 노드를 한 번에 통과할 수 있다
+// (예: review_config가 둘 다 꺼져 있으면 요청 1번이 intent~execution 전체를 커버).
+// 그래서 진행 중 표시는 "지금 어느 네트워크 요청이 떠 있는가" 3가지로만 구분한다 —
+// 그 요청이 실제로 어느 노드를 지나는 중인지는 알 수 없으므로(스트리밍 없음) 억지로
+// 5단계로 쪼개 리플레이하지 않는다.
+export type RunningPhase = 'running_create' | 'running_after_schema' | 'running_after_sql'
 export type Phase = 'idle' | RunningPhase | 'schema_review' | 'sql_review' | 'done' | 'failed'
 
-// running_* phase → 그 단계가 대응하는 스테이지 번호(STAGE_DEFS의 no)
+// running_* phase → 그 요청이 걸쳐 있는 동안 강조해서 보여줄 스테이지 번호(STAGE_DEFS의 no).
+// 실제로는 이 번호 하나에 머무는 게 아니라 이 번호부터 다음 정지 지점까지 통째로 진행되지만,
+// 화면에는 "이 지점부터 진행 중"이라는 앵커로만 쓴다.
 export const RUNNING_STAGE_NO: Record<RunningPhase, string> = {
-  running_intent: '1',
-  running_schema: '2',
-  running_sql: '4',
-  running_validate: '6',
-  running_exec: '7',
+  running_create: '1',
+  running_after_schema: '4',
+  running_after_sql: '6',
 }
 
 export interface StageView {
@@ -107,11 +108,12 @@ function stageMeta(no: string, result: RunResult | null): string {
     case '2':
       return `후보 ${result.schema_candidates.length}건`
     case '3':
-      return '자동승인'
+      // done 상태로 여기 오는 건 게이트가 켜져 있었고(꺼졌으면 skipped) 사람이 실제로 승인한 경우뿐.
+      return '승인 완료'
     case '4':
       return result.retries > 0 ? `재시도 ${result.retries}회` : '생성 완료'
     case '5':
-      return '자동승인'
+      return '승인 완료'
     case '6':
       return '3개 체크 통과'
     case '7':
@@ -122,19 +124,16 @@ function stageMeta(no: string, result: RunResult | null): string {
 }
 
 export const RUNNING_STAGE_TITLE: Record<RunningPhase, string> = {
-  running_intent: '의도 분류 중',
-  running_schema: '스키마 탐색 중',
-  running_sql: 'SQL 생성 중',
-  running_validate: 'SQL 검증 중',
-  running_exec: '쿼리 실행 중',
+  running_create: '질의 처리 중',
+  running_after_schema: 'SQL 생성 및 검증 중',
+  running_after_sql: '검증 및 실행 중',
 }
 
 export const RUNNING_STAGE_SUB: Record<RunningPhase, string> = {
-  running_intent: '질문의 난이도와 유형을 분류합니다.',
-  running_schema: '질의와 유사한 테이블을 벡터 검색으로 찾습니다.',
-  running_sql: '확정된 스키마만 인용해 SQL을 생성합니다.',
-  running_validate: '스키마 인용 / 값 존재 / 안전성을 순서대로 확인합니다.',
-  running_exec: '읽기 전용 커넥션으로 SQL을 실행합니다.',
+  running_create:
+    '의도 분류부터 다음 정지 지점(검토 또는 완료)까지 한 번의 요청으로 처리합니다.',
+  running_after_schema: '확정된 스키마로 SQL을 생성하고 다음 정지 지점까지 검증합니다.',
+  running_after_sql: '승인된 SQL을 스키마 인용 / 값 존재 / 안전성 순서로 검증한 뒤 실행합니다.',
 }
 
 export interface CheckItem {

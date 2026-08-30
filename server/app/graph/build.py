@@ -3,15 +3,22 @@
   START → intent → schema_linking → schema_review → sql_generation
   sql_generation --(VALUE_UNCONFIRMED, retry_count<max_retries)--> sql_generation
   sql_generation --(sql 확보)--> sql_review → validation
-  validation --(citation/anchor 실패, retry_count<max_retries)--> sql_generation
-  validation --(SqlValidator 실패)--> END
+  validation --(review_config.sql 켜짐, 실패)--> sql_review
+  validation --(review_config.sql 꺼짐, citation/anchor 실패, retry_count<max_retries)--> sql_generation
+  validation --(review_config.sql 꺼짐, SqlValidator 실패 또는 재시도 소진)--> END
   validation --(전부 통과)--> execution
-  execution --(timeout/실행오류/zero-row, retry_count<max_retries)--> sql_generation
-  execution --(성공 또는 재시도 소진)--> END
+  execution --(review_config.sql 켜짐, 실패)--> sql_review
+  execution --(review_config.sql 꺼짐, timeout/실행오류/zero-row, retry_count<max_retries)--> sql_generation
+  execution --(review_config.sql 꺼짐, 성공 또는 재시도 소진)--> END
 
-체크포인터 없이 compile() — PostgresSaver는 C(HITL 6단계)에서 추가한다.
-schema_review/sql_review가 지금은 auto-pass 얇은 노드로 존재하는 것도 C에서 interrupt()로
-교체하기 위한 자리다(계획 문서 section 5.1 — 작업 노드와 검토 노드 분리 원칙).
+review_config.schema/sql이 켜져 있으면 schema_review/sql_review 노드가 interrupt()로
+멈춘다(PostgresSaver 체크포인터 필요 — build_graph(checkpointer=...)). 꺼져 있으면
+auto-pass로 지금까지와 동일하게 동작하며, 이 경로는 checkpointer=None으로도 문제없이
+돌아간다(scripts/run_graph_cli.py, eval/token_cost_comparison.py가 이 경로).
+
+review_config.sql이 켜져 있을 때 검증/실행 실패를 sql_generation이 아니라 sql_review로
+되돌리는 이유: 사람이 이미 승인한 SQL을 자동 재생성으로 몰래 덮지 않기 위해서다(계획 문서
+section 5.5) — retry_count 상한과 무관하게 사람이 직접 고치거나 재승인할 때까지 반복된다.
 """
 import logging
 
@@ -53,27 +60,35 @@ def _route_after_sql_generation(state: GraphState) -> str:
     return "sql_review"
 
 
+def _sql_review_enabled(state: GraphState) -> bool:
+    return bool((state.get("review_config") or {}).get("sql"))
+
+
 def _route_after_validation(state: GraphState) -> str:
     code = state.get("retry_error_code")
+    if code is None:
+        return "execution"
+    if _sql_review_enabled(state):
+        return "sql_review"
     if code == "SQL_VALIDATION_FAIL":
         return END
-    if code in ("SCHEMA_CITATION_FAIL", "VALUE_ANCHOR_FAIL"):
-        if state.get("retry_count", 0) < _max_retries(state):
-            return "sql_generation"
-        return END
-    return "execution"
+    if state.get("retry_count", 0) < _max_retries(state):
+        return "sql_generation"
+    return END
 
 
 def _route_after_execution(state: GraphState) -> str:
     code = state.get("retry_error_code")
-    if code in ("TIMEOUT", "UNSAFE_SQL", "ZERO_ROWS_WITH_VALUE_FILTER"):
-        if state.get("retry_count", 0) < _max_retries(state):
-            return "sql_generation"
+    if code is None:
         return END
+    if _sql_review_enabled(state):
+        return "sql_review"
+    if state.get("retry_count", 0) < _max_retries(state):
+        return "sql_generation"
     return END
 
 
-def build_graph(domain: DomainConfig):
+def build_graph(domain: DomainConfig, checkpointer=None):
     llm = TokenCountingLLM(AzureOpenAIChatClient())
     embedder = EmbeddingEngine()
     qdrant_client = get_qdrant_client()
@@ -114,13 +129,13 @@ def build_graph(domain: DomainConfig):
     graph.add_conditional_edges(
         "validation",
         _route_after_validation,
-        {"sql_generation": "sql_generation", "execution": "execution", END: END},
+        {"sql_generation": "sql_generation", "sql_review": "sql_review", "execution": "execution", END: END},
     )
     graph.add_conditional_edges(
         "execution",
         _route_after_execution,
-        {"sql_generation": "sql_generation", END: END},
+        {"sql_generation": "sql_generation", "sql_review": "sql_review", END: END},
     )
 
     logger.info("LangGraph 조립 완료 (domain=%s)", domain.name)
-    return graph.compile()
+    return graph.compile(checkpointer=checkpointer)

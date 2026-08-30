@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { domainApi } from '../../api/domainClient'
 import { runsApi } from '../../api/runsClient'
 import type { ReviewConfig, RunResult } from '../../types'
@@ -12,7 +12,7 @@ import { StageSnapshotCard } from './StageSnapshotCard'
 import {
   activeStageIndex,
   computeStages,
-  failedStageIndex,
+  isRunningPhase,
   RUNNING_STAGE_NO,
   type Phase,
   type RunningPhase,
@@ -31,14 +31,12 @@ function modeName(cfg: ReviewConfig): string {
 }
 
 function statusLabel(phase: Phase): string {
-  if (phase.startsWith('running_')) return `진행 중 · ${RUNNING_STAGE_NO[phase as RunningPhase]}단계`
+  if (phase.startsWith('running_')) return `진행 중 · ${RUNNING_STAGE_NO[phase as RunningPhase]}단계부터`
   if (phase === 'schema_review' || phase === 'sql_review') return '검토 대기'
   if (phase === 'done') return '완료'
   if (phase === 'failed') return '실패'
   return '대기'
 }
-
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 export function QueryRunTab() {
   const [domainName, setDomainName] = useState<string | null>(null)
@@ -54,11 +52,6 @@ export function QueryRunTab() {
   // 사용자가 스테이지 레일에서 직접 클릭해 들여다보고 있는 단계 — null이면 실시간 진행을 따라간다.
   const [selectedStageNo, setSelectedStageNo] = useState<string | null>(null)
 
-  // 스키마/SQL 검토 게이트에서 "승인" 클릭을 기다리는 리플레이 시퀀스를 재개하기 위한 resolver
-  const gateResolver = useRef<(() => void) | null>(null)
-  const waitForApproval = () => new Promise<void>((resolve) => { gateResolver.current = resolve })
-  const resolveGate = () => { gateResolver.current?.(); gateResolver.current = null }
-
   // 진행이 한 단계 나아갈 때마다, 사용자가 보고 있던 스냅샷은 실시간 화면으로 되돌린다 —
   // 검토 승인이 필요한 순간에 엉뚱한 과거 단계를 보고 있다가 놓치는 일이 없도록 한다.
   const goToPhase = (p: Phase) => {
@@ -73,58 +66,62 @@ export function QueryRunTab() {
       .catch(() => setDomainName(null))
   }, [])
 
-  /** POST /runs는 동기 호출 하나뿐이라 노드별 실시간 진행 상황은 실제로 스트리밍되지 않는다.
-   * 응답이 도착한 뒤, 실제 결과 데이터를 짧은 간격으로 재생하며 5개 running_* 단계를 순서대로
-   * 보여준다 — 내용은 전부 실데이터이고, "지금 이 순간 진행 중"이라는 타이밍만 연출이다.
-   * 검토 게이트(스키마/SQL)가 켜져 있으면 사용자가 승인할 때까지 실제로 멈춘다. */
-  const playSequence = async (finished: RunResult) => {
-    const failIdx = failedStageIndex(finished.retry_error_code)
-
-    goToPhase('running_schema')
-    await sleep(900)
-
-    if (cfg.schema) {
-      setSchemaChecked(Object.fromEntries(finished.schema_candidates.map((t) => [t, true])))
+  /** POST /runs·resume 응답의 status를 보고 다음에 보여줄 화면을 정한다 — 전부 서버가
+   * 실제로 멈춘 지점을 그대로 반영한 것이지 클라이언트가 지어내는 게 아니다. */
+  const enterFromResult = (r: RunResult) => {
+    if (r.status === 'interrupted_schema') {
+      setSchemaChecked(Object.fromEntries(r.schema_candidates.map((t) => [t, true])))
       goToPhase('schema_review')
-      await waitForApproval()
-    }
-
-    goToPhase('running_sql')
-    await sleep(900)
-    if (failIdx === 3) {
-      goToPhase('failed') // VALUE_UNCONFIRMED — SQL을 확정하지 못해 검토로 넘어갈 게 없음
       return
     }
-
-    if (cfg.sql) {
-      setSqlDraft(finished.sql ?? '')
+    if (r.status === 'interrupted_sql') {
+      setSqlDraft(r.sql ?? '')
       goToPhase('sql_review')
-      await waitForApproval()
-    }
-
-    goToPhase('running_validate')
-    await sleep(1000)
-    if (failIdx === 5) {
-      goToPhase('failed')
       return
     }
-
-    goToPhase('running_exec')
-    await sleep(700)
-    goToPhase(finished.status === 'success' ? 'done' : 'failed')
+    goToPhase(r.status === 'success' ? 'done' : 'failed')
   }
 
   const runQuery = async () => {
     setError(null)
     setResult(null)
-    goToPhase('running_intent')
+    goToPhase('running_create')
     try {
-      const r = await runsApi.create(question, domainName ?? undefined)
+      const r = await runsApi.create(question, domainName ?? undefined, cfg)
       setResult(r)
-      await playSequence(r)
+      enterFromResult(r)
     } catch (e) {
       goToPhase('idle')
       setError(e instanceof Error ? e.message : '실행 요청 실패')
+    }
+  }
+
+  const approveSchema = async () => {
+    if (!result) return
+    const confirmed = result.schema_candidate_details
+      .map((c) => c.table)
+      .filter((t) => schemaChecked[t])
+    goToPhase('running_after_schema')
+    try {
+      const r = await runsApi.resume(result.run_id, { confirmed_schema: confirmed })
+      setResult(r)
+      enterFromResult(r)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'resume 요청 실패')
+      goToPhase('schema_review')
+    }
+  }
+
+  const approveSql = async () => {
+    if (!result) return
+    goToPhase('running_after_sql')
+    try {
+      const r = await runsApi.resume(result.run_id, { sql: sqlDraft })
+      setResult(r)
+      enterFromResult(r)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'resume 요청 실패')
+      goToPhase('sql_review')
     }
   }
 
@@ -132,24 +129,11 @@ export function QueryRunTab() {
     goToPhase('idle')
     setResult(null)
     setError(null)
-    gateResolver.current = null
-  }
-
-  const editFailedSql = () => {
-    if (!result?.sql) return
-    setSqlDraft(result.sql)
-    goToPhase('sql_review')
-  }
-
-  const approveSql = () => {
-    // 실패 화면에서 "SQL 직접 수정"으로 들어온 경우 재생 시퀀스가 이미 끝나 있으므로 바로 결과로.
-    if (gateResolver.current) resolveGate()
-    else if (result) goToPhase(result.status === 'success' ? 'done' : 'failed')
   }
 
   const stages = computeStages(phase, cfg, result)
   const showProgress = phase !== 'idle'
-  const isRunningPhase = phase.startsWith('running_')
+  const isRunning = isRunningPhase(phase)
 
   const activeIdx = activeStageIndex(phase, result)
   const activeStageNo = phase === 'done' ? '7' : activeIdx >= 0 && activeIdx <= 6 ? String(activeIdx + 1) : null
@@ -219,7 +203,7 @@ export function QueryRunTab() {
             <button
               className="btn-primary run-button"
               onClick={runQuery}
-              disabled={isRunningPhase || !question.trim()}
+              disabled={isRunning || !question.trim()}
             >
               실행
             </button>
@@ -232,7 +216,7 @@ export function QueryRunTab() {
           <section className="progress-card">
             <div className="progress-head">
               <h2>진행 상태</h2>
-              <span className={`run-status-badge status-${isRunningPhase ? 'fetching' : phase}`}>
+              <span className={`run-status-badge status-${isRunning ? 'fetching' : phase}`}>
                 {statusLabel(phase)}
               </span>
               {result && result.retries > 0 && (
@@ -271,9 +255,7 @@ export function QueryRunTab() {
           />
         )}
 
-        {!showSnapshot && isRunningPhase && (
-          <RunningWorkCard phase={phase as RunningPhase} question={question} result={result} />
-        )}
+        {!showSnapshot && isRunning && <RunningWorkCard phase={phase as RunningPhase} />}
 
         {!showSnapshot && phase === 'schema_review' && result && (
           <SchemaReviewCard
@@ -281,7 +263,7 @@ export function QueryRunTab() {
             checked={schemaChecked}
             onToggle={(t) => setSchemaChecked((prev) => ({ ...prev, [t]: !prev[t] }))}
             onCancel={restart}
-            onApprove={resolveGate}
+            onApprove={approveSchema}
           />
         )}
 
@@ -292,15 +274,15 @@ export function QueryRunTab() {
             retries={result.retries}
             runId={result.run_id}
             refTables={result.confirmed_schema}
+            retryErrorCode={result.retry_error_code}
+            retryFeedback={result.retry_feedback}
             onApprove={approveSql}
           />
         )}
 
         {phase === 'done' && result && <ResultCard result={result} />}
 
-        {phase === 'failed' && result && (
-          <FailedCard result={result} onEditSql={editFailedSql} onRestart={restart} />
-        )}
+        {phase === 'failed' && result && <FailedCard result={result} onRestart={restart} />}
       </div>
     </>
   )

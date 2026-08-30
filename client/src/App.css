@@ -392,6 +392,9 @@
 .review-retry-box{ display: flex; flex-direction: column; gap: 5px; padding: 11px 13px; border: 1px solid var(--line-soft); border-radius: 8px; background: var(--surface-soft); }
 .review-retry-box-title{ font-size: 10px; font-weight: 600; letter-spacing: .08em; color: var(--ink-label); }
 .review-retry-box-detail{ font-size: 11.5px; line-height: 1.5; color: var(--ink-soft); }
+.review-retry-box.danger{ border-color: var(--danger-line); background: var(--danger-bg); }
+.review-retry-box.danger .review-retry-box-title{ color: var(--danger-text); }
+.review-retry-box.danger .review-retry-box-detail{ color: var(--danger-text-soft); }
 
 /* 스키마 후보 카드 그리드 */
 .schema-candidate-grid{ display: grid; grid-template-columns: repeat(auto-fill, minmax(268px, 1fr)); gap: 10px; }
