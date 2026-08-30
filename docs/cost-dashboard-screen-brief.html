@@ -1,0 +1,411 @@
+<title>비용 대시보드</title>
+<style>
+  :root{
+    --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+    --bg:#eff1f3;
+    --surface:#ffffff;
+    --surface-soft:#f7f8fa;
+    --surface-subtle:#fbfcfd;
+
+    --ink:#14171c;
+    --ink-soft:#6a7280;
+    --ink-mute:#9aa3ae;
+    --ink-faint:#b3bac3;
+
+    --line:rgba(16,20,28,.10);
+    --line-soft:rgba(16,20,28,.08);
+    --line-strong:rgba(16,20,28,.14);
+
+    --accent:#6b4fd8;
+    --accent-hover:#4c34a8;
+    --accent-bg:rgba(107,79,216,.09);
+
+    --success:#1f8a5f;
+    --success-text:#166b4a;
+    --success-bg:#eaf6f0;
+    --success-line:#c3e3d4;
+
+    --danger:#c0392b;
+    --danger-bg:#fff6f5;
+    --danger-line:#f0cdc7;
+
+    --warn-text:#8a6a2b;
+    --warn-bg:#fdf3e0;
+    --warn-line:#efdcb8;
+
+    --sidebar-bg:#12151a;
+    --sidebar-ink:#e7eaee;
+    --sidebar-ink-mute:#5d6774;
+    --sidebar-active-bg:#1e2530;
+
+    --radius:10px;
+    --radius-sm:7px;
+    --shadow: 0 1px 2px rgba(16,20,28,.04);
+  }
+
+  *{ box-sizing:border-box; }
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--ink);
+    font-family:var(--font-mono);
+    font-size:14px;
+    line-height:1.6;
+  }
+  ::selection{ background:var(--accent-bg); color:var(--accent-hover); }
+
+  .wrap{ max-width:920px; margin:0 auto; padding:56px 28px 120px; }
+
+  /* ---------- header ---------- */
+  .doc-head{ margin-bottom:44px; }
+  .doc-kicker{
+    display:flex; align-items:center; gap:8px;
+    font-size:11px; letter-spacing:.09em; text-transform:uppercase;
+    color:var(--accent-hover); font-weight:600; margin-bottom:14px;
+  }
+  .doc-kicker::before{
+    content:""; width:6px; height:6px; border-radius:50%; background:var(--accent);
+  }
+  h1{
+    font-size:30px; font-weight:700; letter-spacing:-.01em; margin:0 0 10px;
+    text-wrap:balance;
+  }
+  .doc-sub{ color:var(--ink-soft); font-size:14.5px; max-width:62ch; margin:0; }
+  .doc-meta{
+    display:flex; gap:22px; margin-top:22px; padding-top:18px;
+    border-top:1px solid var(--line); flex-wrap:wrap;
+  }
+  .meta-item{ display:flex; flex-direction:column; gap:3px; }
+  .meta-label{ font-size:10.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--ink-mute); }
+  .meta-value{ font-size:13px; color:var(--ink); font-weight:600; }
+  .meta-value code{ font-weight:600; color:var(--accent-hover); }
+
+  /* ---------- section scaffolding ---------- */
+  section{ margin-top:52px; }
+  .sec-num{
+    display:inline-block; font-size:11px; color:var(--ink-mute);
+    letter-spacing:.06em; margin-bottom:6px;
+  }
+  h2{ font-size:18px; font-weight:700; margin:0 0 6px; letter-spacing:-.005em; }
+  .sec-desc{ color:var(--ink-soft); font-size:13.5px; max-width:66ch; margin:0 0 20px; }
+
+  /* ---------- 3 core questions ---------- */
+  .qgrid{ display:grid; grid-template-columns:repeat(3, 1fr); gap:14px; }
+  .qcard{
+    background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
+    padding:18px; box-shadow:var(--shadow);
+  }
+  .qcard .qn{ font-size:11px; color:var(--accent-hover); font-weight:700; margin-bottom:8px; }
+  .qcard p{ margin:0; font-size:13.5px; color:var(--ink); }
+
+  /* ---------- data source table ---------- */
+  .apitable{
+    background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
+    overflow:hidden; box-shadow:var(--shadow);
+  }
+  .apirow{
+    display:grid; grid-template-columns:230px 1fr; gap:16px;
+    padding:14px 18px; border-bottom:1px solid var(--line-soft);
+  }
+  .apirow:last-child{ border-bottom:none; }
+  .apipath{
+    font-size:12.5px; font-weight:700; color:var(--accent-hover);
+    align-self:start;
+  }
+  .apidesc{ font-size:12.5px; color:var(--ink-soft); }
+  .apidesc b{ color:var(--ink); font-weight:600; }
+
+  /* ---------- wireframe canvas ---------- */
+  .frame{
+    background:var(--surface); border:1px solid var(--line-strong); border-radius:12px;
+    padding:18px; box-shadow:0 1px 3px rgba(16,20,28,.06);
+  }
+  .frame-label{
+    font-size:10.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--ink-mute);
+    margin-bottom:14px; display:flex; align-items:center; gap:8px;
+  }
+  .frame-label::after{ content:""; flex:1; height:1px; background:var(--line); }
+
+  .zone{
+    border:1.5px dashed var(--line-strong); border-radius:var(--radius-sm);
+    padding:16px; position:relative; background:var(--surface-subtle);
+  }
+  .zone + .zone{ margin-top:14px; }
+  .zone-tag{
+    position:absolute; top:-9px; left:12px; background:var(--accent);
+    color:#fff; font-size:9.5px; font-weight:700; letter-spacing:.05em;
+    padding:2px 8px; border-radius:20px; text-transform:uppercase;
+  }
+  .zone-title{ font-size:13px; font-weight:700; margin:4px 0 4px; }
+  .zone-note{ font-size:12px; color:var(--ink-soft); margin:0 0 12px; max-width:64ch; }
+
+  /* Zone A — summary strip */
+  .strip{ display:flex; gap:0; background:var(--surface); border:1px solid var(--line); border-radius:var(--radius-sm); overflow:hidden; }
+  .strip-cell{ flex:1; padding:12px 16px; border-right:1px solid var(--line-soft); }
+  .strip-cell:last-child{ border-right:none; }
+  .strip-k{ font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-mute); margin-bottom:5px; }
+  .strip-v{ font-size:17px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .strip-v.accent{ color:var(--accent-hover); }
+  .strip-v .unit{ font-size:11px; font-weight:500; color:var(--ink-mute); margin-left:3px; }
+
+  /* Zone B — before/after compare */
+  .compare{ display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  .cmp-card{ background:var(--surface); border:1px solid var(--line); border-radius:var(--radius-sm); padding:14px; }
+  .cmp-card.after{ border-color:var(--success-line); background:var(--success-bg); }
+  .cmp-top{ display:flex; justify-content:space-between; align-items:baseline; margin-bottom:10px; }
+  .cmp-name{ font-size:11.5px; font-weight:700; color:var(--ink-soft); }
+  .cmp-card.after .cmp-name{ color:var(--success-text); }
+  .cmp-badge{ font-size:9.5px; padding:2px 7px; border-radius:20px; background:var(--surface-soft); color:var(--ink-mute); font-weight:600; }
+  .cmp-card.after .cmp-badge{ background:#fff; color:var(--success-text); }
+  .bar-track{ height:8px; background:var(--line-soft); border-radius:6px; overflow:hidden; margin-bottom:8px; }
+  .bar-fill{ height:100%; border-radius:6px; background:var(--ink-faint); }
+  .cmp-card.after .bar-fill{ background:var(--success); }
+  .cmp-num{ font-size:19px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .cmp-sub{ font-size:11px; color:var(--ink-mute); }
+  .delta-pill{
+    display:inline-flex; align-items:center; gap:5px; margin-top:12px;
+    background:var(--success); color:#fff; font-size:11.5px; font-weight:700;
+    padding:5px 11px; border-radius:20px;
+  }
+
+  /* Zone C — difficulty routing */
+  .routetable{ width:100%; border-collapse:collapse; background:var(--surface); border:1px solid var(--line); border-radius:var(--radius-sm); overflow:hidden; }
+  .routetable th{
+    text-align:left; font-size:10px; letter-spacing:.06em; text-transform:uppercase;
+    color:var(--ink-mute); background:var(--surface-soft); padding:9px 14px; font-weight:600;
+  }
+  .routetable td{ padding:10px 14px; border-top:1px solid var(--line-soft); font-size:12.5px; }
+  .diff-pill{ display:inline-block; font-size:10.5px; font-weight:700; padding:2px 9px; border-radius:20px; }
+  .diff-easy{ background:var(--success-bg); color:var(--success-text); }
+  .diff-medium{ background:var(--warn-bg); color:var(--warn-text); }
+  .diff-hard{ background:var(--danger-bg); color:#9d2c1f; }
+  .model-chip{
+    font-size:11px; background:var(--accent-bg); color:var(--accent-hover);
+    padding:2px 8px; border-radius:5px; font-weight:600;
+  }
+  .num-cell{ font-variant-numeric:tabular-nums; text-align:right; }
+  .placeholder-note{
+    margin-top:10px; font-size:11px; color:var(--ink-mute); display:flex; gap:6px; align-items:center;
+  }
+  .placeholder-note::before{ content:"⚠"; color:var(--warn-text); }
+
+  /* Zone D — run history */
+  .runrow{
+    display:grid; grid-template-columns:88px 1fr 90px 110px 24px;
+    gap:12px; align-items:center; padding:10px 14px; background:var(--surface);
+    border:1px solid var(--line); border-radius:8px;
+  }
+  .runrow + .runrow{ margin-top:8px; }
+  .run-id{ font-size:11px; color:var(--ink-mute); font-weight:600; }
+  .run-q{ font-size:12.5px; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .run-tok{ font-size:12px; font-weight:700; text-align:right; font-variant-numeric:tabular-nums; }
+  .run-chevron{ color:var(--ink-faint); text-align:right; }
+
+  /* ---------- state handling ---------- */
+  .statesgrid{ display:grid; grid-template-columns:repeat(3,1fr); gap:14px; }
+  .statecard{
+    border:1px solid var(--line); border-radius:var(--radius-sm); padding:14px;
+    background:var(--surface); font-size:12.5px; color:var(--ink-soft);
+  }
+  .statecard b{ display:block; color:var(--ink); font-size:13px; margin-bottom:6px; }
+
+  /* ---------- token reference table ---------- */
+  .tokref{ display:grid; grid-template-columns:repeat(4, 1fr); gap:10px; }
+  .swatch{
+    border:1px solid var(--line); border-radius:8px; overflow:hidden; background:var(--surface);
+  }
+  .swatch-color{ height:38px; }
+  .swatch-meta{ padding:8px 10px; }
+  .swatch-name{ font-size:11px; font-weight:700; }
+  .swatch-hex{ font-size:10.5px; color:var(--ink-mute); }
+
+  .footnote{
+    margin-top:56px; padding-top:20px; border-top:1px solid var(--line);
+    font-size:11.5px; color:var(--ink-mute); display:flex; justify-content:space-between; gap:16px;
+    flex-wrap:wrap;
+  }
+
+  @media (max-width:720px){
+    .qgrid, .compare, .statesgrid, .tokref{ grid-template-columns:1fr; }
+    .apirow{ grid-template-columns:1fr; }
+  }
+</style>
+
+<div class="wrap">
+
+  <div class="doc-head">
+    <div class="doc-kicker">디자이너 전달용 화면 브리프</div>
+    <h1>비용 대시보드</h1>
+    <p class="doc-sub">
+      난이도별 모델 라우팅이 실제로 비용을 어떻게 바꾸는지 한 화면에서 보여준다.
+      사이드바 <b>에이전트 관리 → 비용 대시보드</b>로 진입하며, 지금은 <code>SOON</code> 배지가
+      붙은 비활성 메뉴다 — 이번 스프린트에서 실제 화면으로 채운다.
+    </p>
+    <div class="doc-meta">
+      <div class="meta-item"><span class="meta-label">Nav 위치</span><span class="meta-value">에이전트 관리 · 비용 대시보드</span></div>
+      <div class="meta-item"><span class="meta-label">참고 화면</span><span class="meta-value">도메인 관리 (동일 톤 유지)</span></div>
+      <div class="meta-item"><span class="meta-label">디자인 시스템</span><span class="meta-value"><code>tokens.css</code> 그대로 사용</span></div>
+      <div class="meta-item"><span class="meta-label">신규 색상</span><span class="meta-value">추가 없음</span></div>
+    </div>
+  </div>
+
+  <section>
+    <span class="sec-num">01</span>
+    <h2>이 화면이 답해야 하는 질문 3가지</h2>
+    <p class="sec-desc">모든 패널은 아래 세 질문 중 하나에 답하기 위해 존재한다. 장식적인 패널은 넣지 않는다.</p>
+    <div class="qgrid">
+      <div class="qcard">
+        <div class="qn">Q1</div>
+        <p>지금까지 실행에 토큰/비용이 얼마나 들었나?</p>
+      </div>
+      <div class="qcard">
+        <div class="qn">Q2</div>
+        <p>스키마를 전체 덤프 대신 검색으로 줄인 게 실제로 비용을 줄였나?</p>
+      </div>
+      <div class="qcard">
+        <div class="qn">Q3</div>
+        <p>쉬운 질문은 저비용 모델로, 어려운 질문은 고성능 모델로 실제로 갈리고 있나?</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <span class="sec-num">02</span>
+    <h2>데이터 소스</h2>
+    <p class="sec-desc">화면을 채우는 백엔드 엔드포인트 2개 — 로딩/빈 상태 설계 시 참고.</p>
+    <div class="apitable">
+      <div class="apirow">
+        <div class="apipath">GET /cost/summary</div>
+        <div class="apidesc"><b>Zone B, C</b>의 데이터 소스. <code>group_by</code> 파라미터로 비교 축을 바꿔 같은 모양의 응답을 재사용 — <code>schema_rag_mode</code>면 Zone B, <code>difficulty</code>면 Zone C.</div>
+      </div>
+      <div class="apirow">
+        <div class="apipath">GET /runs/{id}/cost</div>
+        <div class="apidesc"><b>Zone D</b>의 목록 + 행 클릭 시 드릴다운(노드별 호출 내역)의 데이터 소스.</div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <span class="sec-num">03</span>
+    <h2>화면 구성 — 4존</h2>
+    <p class="sec-desc">
+      점선 박스 = 실제로 그려야 할 영역, 안쪽 목업 = 톤·정보 밀도 참고용(치수·색은 자유,
+      배치와 강조 우선순위만 유지). Zone B의 수치는 <code>docs/kpi-schema-rag-mode-ablation.md</code>
+      실측값을 그대로 썼다 — 실 데이터 기준.
+    </p>
+
+    <div class="frame">
+      <div class="frame-label">Cost Dashboard — wireframe</div>
+
+      <div class="zone">
+        <span class="zone-tag">Zone A</span>
+        <div class="zone-title">상단 요약 스트립</div>
+        <p class="zone-note">화면 최상단, 도메인 관리 화면의 연결 상태 바와 같은 자리·톤. 기간 필터(오늘/7일/전체)는 스트립 우측에 pill 형태로.</p>
+        <div class="strip">
+          <div class="strip-cell"><div class="strip-k">총 토큰</div><div class="strip-v">161,243</div></div>
+          <div class="strip-cell"><div class="strip-k">LLM 호출 수</div><div class="strip-v">85<span class="unit">calls</span></div></div>
+          <div class="strip-cell"><div class="strip-k">Run당 평균</div><div class="strip-v accent">1,897<span class="unit">tok/run</span></div></div>
+          <div class="strip-cell"><div class="strip-k">활성 도메인</div><div class="strip-v" style="font-size:14px">poc_prostate</div></div>
+        </div>
+      </div>
+
+      <div class="zone">
+        <span class="zone-tag">Zone B</span>
+        <div class="zone-title">스키마 검색 도입 전 / 후 비교</div>
+        <p class="zone-note">가장 강조할 패널 — "전체 스키마 덤프" 대비 "Qdrant 검색"의 토큰 절감을 시각적으로 대비시킨다. 막대 길이 차이가 한눈에 보여야 한다.</p>
+        <div class="compare">
+          <div class="cmp-card">
+            <div class="cmp-top"><span class="cmp-name">전체 스키마 덤프</span><span class="cmp-badge">BEFORE</span></div>
+            <div class="bar-track"><div class="bar-fill" style="width:100%"></div></div>
+            <div class="cmp-num">104,056<span class="cmp-sub" style="font-size:12px;font-weight:500"> tok</span></div>
+            <div class="cmp-sub">43 calls · 16테이블 전체 주입</div>
+          </div>
+          <div class="cmp-card after">
+            <div class="cmp-top"><span class="cmp-name">Qdrant 스키마 검색</span><span class="cmp-badge">AFTER</span></div>
+            <div class="bar-track"><div class="bar-fill" style="width:55%"></div></div>
+            <div class="cmp-num">57,187<span class="cmp-sub" style="font-size:12px;font-weight:500"> tok</span></div>
+            <div class="cmp-sub">42 calls · 관련 테이블만 검색·주입</div>
+            <div class="delta-pill">▾ 45% 절감</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="zone">
+        <span class="zone-tag">Zone C</span>
+        <div class="zone-title">난이도별 모델 분기 현황</div>
+        <p class="zone-note">난이도 태그가 실제로 다른 모델을 부르고 있는지 증명하는 표 — 모델명이 컬럼마다 갈려야 이 기능이 "동작 중"임을 보여준다.</p>
+        <table class="routetable">
+          <thead><tr><th>난이도</th><th>라우팅된 모델</th><th style="text-align:right">호출 수</th><th style="text-align:right">총 토큰</th></tr></thead>
+          <tbody>
+            <tr><td><span class="diff-pill diff-easy">easy</span></td><td><span class="model-chip">gpt-4.1-mini</span></td><td class="num-cell">31</td><td class="num-cell">18,420</td></tr>
+            <tr><td><span class="diff-pill diff-medium">medium</span></td><td><span class="model-chip">gpt-4.1-mini</span></td><td class="num-cell">40</td><td class="num-cell">27,110</td></tr>
+            <tr><td><span class="diff-pill diff-hard">hard</span></td><td><span class="model-chip" style="background:var(--accent);color:#fff">gpt-4.1</span></td><td class="num-cell">14</td><td class="num-cell">22,905</td></tr>
+          </tbody>
+        </table>
+        <div class="placeholder-note">위 표의 수치는 예시 — router.py 구현 전이라 실제 분기 데이터는 아직 없음</div>
+      </div>
+
+      <div class="zone">
+        <span class="zone-tag">Zone D</span>
+        <div class="zone-title">최근 실행 이력</div>
+        <p class="zone-note">행 클릭 → 오른쪽 슬라이드/모달로 <code>GET /runs/{id}/cost</code>의 노드별 내역 펼침. 실행 히스토리 화면과 중복되지 않도록 "비용 관점"으로만 좁혀서(질문 전문 대신 요약, SQL 미표시).</p>
+        <div class="runrow">
+          <span class="run-id">#a13f9c</span>
+          <span class="run-q">전립선암 환자의 수술 이력을 알고 싶어</span>
+          <span class="diff-pill diff-medium">medium</span>
+          <span class="run-tok">2,140 tok</span>
+          <span class="run-chevron">›</span>
+        </div>
+        <div class="runrow">
+          <span class="run-id">#f02b41</span>
+          <span class="run-q">부서별 PSA 검사 건수를 월별로 집계해줘</span>
+          <span class="diff-pill diff-hard">hard</span>
+          <span class="run-tok">3,880 tok</span>
+          <span class="run-chevron">›</span>
+        </div>
+        <div class="runrow">
+          <span class="run-id">#7c118e</span>
+          <span class="run-q">담당 의사 목록 보여줘</span>
+          <span class="diff-pill diff-easy">easy</span>
+          <span class="run-tok">610 tok</span>
+          <span class="run-chevron">›</span>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <section>
+    <span class="sec-num">04</span>
+    <h2>상태 처리</h2>
+    <p class="sec-desc">도메인 관리 화면의 로딩(skeleton)/에러 패턴을 그대로 재사용.</p>
+    <div class="statesgrid">
+      <div class="statecard"><b>로딩</b>도메인 관리 화면의 skeleton-line과 동일한 스타일로 Zone A~D 자리에 펄스 애니메이션.</div>
+      <div class="statecard"><b>데이터 없음</b>아직 실행 기록이 없는 신규 도메인 — "첫 질의를 실행하면 여기 비용이 쌓입니다" + 질의 실행 화면 링크.</div>
+      <div class="statecard"><b>에러</b>app-db 연결 실패 시 도메인 관리 화면과 동일한 적색 에러 배너 + 재시도 버튼.</div>
+    </div>
+  </section>
+
+  <section>
+    <span class="sec-num">05</span>
+    <h2>디자인 토큰 — 그대로 사용</h2>
+    <p class="sec-desc">새 색상을 추가하지 않는다. 시맨틱 컬러(success/danger/warn)는 이미 있는 의미로만 쓴다 — 예: success는 "절감/개선"에만, danger는 실제 에러에만, hard 난이도 표기처럼 상태와 무관한 곳에 danger 톤을 끌어오지 않는다(위 목업의 hard pill도 danger-bg를 재사용했을 뿐 오류 의미 아님 — 디자이너 재량으로 별도 뉴트럴 처리 가능).</p>
+    <div class="tokref">
+      <div class="swatch"><div class="swatch-color" style="background:var(--accent)"></div><div class="swatch-meta"><div class="swatch-name">accent</div><div class="swatch-hex">#6b4fd8</div></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:var(--success)"></div><div class="swatch-meta"><div class="swatch-name">success</div><div class="swatch-hex">#1f8a5f</div></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:var(--warn-text)"></div><div class="swatch-meta"><div class="swatch-name">warn-text</div><div class="swatch-hex">#8a6a2b</div></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:var(--danger)"></div><div class="swatch-meta"><div class="swatch-name">danger</div><div class="swatch-hex">#c0392b</div></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:var(--sidebar-bg)"></div><div class="swatch-meta"><div class="swatch-name">sidebar-bg</div><div class="swatch-hex">#12151a</div></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:var(--bg);border-bottom:1px solid var(--line)"></div><div class="swatch-meta"><div class="swatch-name">bg</div><div class="swatch-hex">#eff1f3</div></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:var(--surface);border-bottom:1px solid var(--line)"></div><div class="swatch-meta"><div class="swatch-name">surface</div><div class="swatch-hex">#ffffff</div></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:var(--ink)"></div><div class="swatch-meta"><div class="swatch-name">ink</div><div class="swatch-hex">#14171c</div></div></div>
+    </div>
+  </section>
+
+  <div class="footnote">
+    <span>서체: JetBrains Mono (앱 전체 공통, 별도 서체 도입 없음)</span>
+    <span>관련 문서: docs/data-access-copilot-plan.md §6-D, docs/cost-dashboard-design.md</span>
+  </div>
+
+</div>

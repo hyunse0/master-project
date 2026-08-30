@@ -6,6 +6,9 @@ interface Props {
   refTables: string[]
   retryErrorCode: string | null
   retryFeedback: string | null
+  edited: boolean
+  correctionReason: string
+  onCorrectionReasonChange: (reason: string) => void
   onApprove: () => void
 }
 
@@ -17,6 +20,9 @@ export function SqlReviewCard({
   refTables,
   retryErrorCode,
   retryFeedback,
+  edited,
+  correctionReason,
+  onCorrectionReasonChange,
   onApprove,
 }: Props) {
   const lineCount = sql.split('\n').length
@@ -62,6 +68,20 @@ export function SqlReviewCard({
           rows={13}
           spellCheck={false}
         />
+
+        {edited && (
+          <div className="correction-reason-block">
+            <span className="review-section-hint">
+              수정 이유(선택) — 나중에 비슷한 질문에 참고 사례로 쓰일 수 있어요
+            </span>
+            <input
+              className="correction-reason-input"
+              value={correctionReason}
+              onChange={(e) => onCorrectionReasonChange(e.target.value)}
+              placeholder="예: 암종 정보는 patient가 아니라 cancer_registry 기준으로 조회해야 함"
+            />
+          </div>
+        )}
 
         <div className="review-card-actions">
           <span className="review-selected-label">참조 테이블 {refTables.join(', ') || '없음'}</span>

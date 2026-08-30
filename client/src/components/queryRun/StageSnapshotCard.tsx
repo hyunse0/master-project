@@ -12,12 +12,10 @@ interface Props {
 
 const TITLE: Record<string, string> = {
   '1': '1단계 · 의도 분류 결과',
-  '2': '2단계 · 검색된 후보 테이블',
-  '3': '3단계 · 스키마 검토',
-  '4': '4단계 · 생성된 SQL',
-  '5': '5단계 · SQL 검토',
-  '6': '6단계 · 검증 결과',
-  '7': '7단계 · 실행 결과',
+  '2': '2단계 · 스키마 탐색 및 검토',
+  '3': '3단계 · SQL 생성 및 검토',
+  '4': '4단계 · 검증 결과',
+  '5': '5단계 · 실행 결과',
 }
 
 /** 실시간 진행 중이 아닌, 이미 지나간 스테이지를 클릭했을 때 보여주는 읽기 전용 스냅샷.
@@ -65,36 +63,34 @@ function renderBody(stageNo: string, result: RunResult, question: string, cfg: R
       return (
         <div className="running-block">
           <CandidateList candidates={result.schema_candidate_details} />
+          {cfg.schema ? (
+            <>
+              <span className="review-section-hint">승인된 테이블</span>
+              <ul className="snapshot-list">
+                {result.confirmed_schema.map((t) => (
+                  <li key={t}>{t}</li>
+                ))}
+              </ul>
+            </>
+          ) : (
+            <p className="snapshot-empty-text">검토 모드가 꺼져 있어 자동 승인됐습니다.</p>
+          )}
         </div>
       )
     case '3':
-      return cfg.schema ? (
-        <div className="running-block">
-          <span className="review-section-hint">승인된 테이블</span>
-          <ul className="snapshot-list">
-            {result.confirmed_schema.map((t) => (
-              <li key={t}>{t}</li>
-            ))}
-          </ul>
-        </div>
-      ) : (
-        <p className="snapshot-empty-text">검토 모드가 꺼져 있어 자동 승인됐습니다.</p>
-      )
-    case '4':
       return result.sql ? (
-        <pre className="sql-view-box">{result.sql}</pre>
+        <div className="running-block">
+          <pre className="sql-view-box">{result.sql}</pre>
+          <p className="snapshot-empty-text">
+            {cfg.sql ? '검토를 거쳐 승인된 SQL입니다.' : '검토 모드가 꺼져 있어 자동 승인됐습니다.'}
+          </p>
+        </div>
       ) : (
         <p className="snapshot-empty-text">값을 확정하지 못해 SQL을 생성하지 못했습니다.</p>
       )
-    case '5':
-      return cfg.sql ? (
-        <pre className="sql-view-box">{result.sql}</pre>
-      ) : (
-        <p className="snapshot-empty-text">검토 모드가 꺼져 있어 자동 승인됐습니다.</p>
-      )
-    case '6':
+    case '4':
       return <ValidateChecklist result={result} />
-    case '7':
+    case '5':
       return result.row_count != null ? (
         <p className="snapshot-empty-text">
           {result.row_count}행 · {result.latency_ms}ms — 아래 실행 결과 카드를 참고하세요.

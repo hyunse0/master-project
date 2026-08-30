@@ -1,6 +1,6 @@
 import type { RunResult } from '../../types'
 
-export type StageStatus = 'idle' | 'done' | 'waiting' | 'running' | 'failed' | 'skipped'
+export type StageStatus = 'idle' | 'done' | 'waiting' | 'running' | 'failed'
 
 // POST /runs·resume은 동기 호출이라 한 번의 요청이 여러 노드를 한 번에 통과할 수 있다
 // (예: review_config가 둘 다 꺼져 있으면 요청 1번이 intent~execution 전체를 커버).
@@ -15,14 +15,15 @@ export type Phase = 'idle' | RunningPhase | 'schema_review' | 'sql_review' | 'do
 // 화면에는 "이 지점부터 진행 중"이라는 앵커로만 쓴다.
 export const RUNNING_STAGE_NO: Record<RunningPhase, string> = {
   running_create: '1',
-  running_after_schema: '4',
-  running_after_sql: '6',
+  running_after_schema: '3',
+  running_after_sql: '4',
 }
 
 export interface StageView {
   no: string
   label: string
   isGate: boolean
+  gateKey: 'schema' | 'sql' | null
   status: StageStatus
   meta: string
 }
@@ -32,22 +33,23 @@ interface ReviewCfg {
   sql: boolean
 }
 
+// 실제 파이프라인은 스키마 검토/SQL 검토가 별도 노드지만, 스테이지 레일에는 검토 대기를
+// 별도 박스로 두지 않고 "스키마 탐색"/"SQL 생성" 박스 자체의 상태(waiting)로 합쳐서 보여준다 —
+// 그 스테이지에 딸린 검토 게이트를 같은 박스의 체크박스로 켜고 끌 수 있게 하기 위함.
 const STAGE_DEFS: { no: string; label: string; gate: 'schema' | 'sql' | null }[] = [
   { no: '1', label: '의도 분류', gate: null },
-  { no: '2', label: '스키마 탐색', gate: null },
-  { no: '3', label: '스키마 검토', gate: 'schema' },
-  { no: '4', label: 'SQL 생성', gate: null },
-  { no: '5', label: 'SQL 검토', gate: 'sql' },
-  { no: '6', label: '검증', gate: null },
-  { no: '7', label: '실행', gate: null },
+  { no: '2', label: '스키마 탐색', gate: 'schema' },
+  { no: '3', label: 'SQL 생성', gate: 'sql' },
+  { no: '4', label: '검증', gate: null },
+  { no: '5', label: '실행', gate: null },
 ]
 
 /** retry_error_code로부터 실패가 실제로 발생한 스테이지 인덱스(0-based)를 판정한다.
  * validation_node는 첫 실패에서 멈추므로 그 앞 스테이지들은 실제로 통과한 것이 맞다. */
 export function failedStageIndex(code: string | null): number {
-  if (code === 'VALUE_UNCONFIRMED') return 3 // SQL 생성 — 값 확정 실패
-  if (code === 'SCHEMA_CITATION_FAIL' || code === 'VALUE_ANCHOR_FAIL' || code === 'SQL_VALIDATION_FAIL') return 5 // 검증
-  if (code === 'TIMEOUT' || code === 'UNSAFE_SQL' || code === 'ZERO_ROWS_WITH_VALUE_FILTER') return 6 // 실행
+  if (code === 'VALUE_UNCONFIRMED') return 2 // SQL 생성 — 값 확정 실패
+  if (code === 'SCHEMA_CITATION_FAIL' || code === 'VALUE_ANCHOR_FAIL' || code === 'SQL_VALIDATION_FAIL') return 3 // 검증
+  if (code === 'TIMEOUT' || code === 'UNSAFE_SQL' || code === 'ZERO_ROWS_WITH_VALUE_FILTER') return 4 // 실행
   return -1
 }
 
@@ -61,9 +63,9 @@ export function isRunningPhase(phase: Phase): phase is RunningPhase {
 export function activeStageIndex(phase: Phase, result: RunResult | null): number {
   const runningNo = isRunningPhase(phase) ? RUNNING_STAGE_NO[phase] : null
   if (runningNo) return Number(runningNo) - 1
-  if (phase === 'schema_review') return 2
-  if (phase === 'sql_review') return 4
-  if (phase === 'done') return 7
+  if (phase === 'schema_review') return 1
+  if (phase === 'sql_review') return 2
+  if (phase === 'done') return 5
   if (phase === 'failed') return failedStageIndex(result?.retry_error_code ?? null)
   return -1
 }
@@ -74,29 +76,28 @@ export function computeStages(phase: Phase, cfg: ReviewCfg, result: RunResult | 
   const failIdx = phase === 'failed' ? activeIdx : -1
 
   return STAGE_DEFS.map((def, i) => {
-    const gateActive = def.gate === 'schema' ? cfg.schema : def.gate === 'sql' ? cfg.sql : true
-    const skipped = def.gate !== null && !gateActive
-    const waiting = (phase === 'schema_review' && def.no === '3') || (phase === 'sql_review' && def.no === '5')
+    const gateActive = def.gate === 'schema' ? cfg.schema : def.gate === 'sql' ? cfg.sql : false
+    const waiting = (phase === 'schema_review' && def.no === '2') || (phase === 'sql_review' && def.no === '3')
     const running = runningNo === def.no
     const failed = phase === 'failed' && i === failIdx
-    const done = !skipped && !failed && !running && i < activeIdx
+    const done = !failed && !running && i < activeIdx
 
     let status: StageStatus = 'idle'
-    if (skipped) status = 'skipped'
-    else if (waiting) status = 'waiting'
+    if (waiting) status = 'waiting'
     else if (running) status = 'running'
     else if (failed) status = 'failed'
     else if (done) status = 'done'
 
     let meta: string
-    if (skipped) meta = '건너뜀'
-    else if (waiting) meta = '검토 대기'
+    if (waiting) meta = '검토 대기'
     else if (running) meta = '진행 중'
     else if (failed) meta = '실패'
-    else if (done) meta = stageMeta(def.no, result)
+    // done 상태로 여기 오는 게이트 스테이지는 검토가 켜져 있었을 때만 사람이 실제로 승인한 것 —
+    // 꺼져 있었다면 검토 없이 자동으로 지나간 것이므로 원래 결과 메타를 그대로 보여준다.
+    else if (done) meta = def.gate && gateActive ? '검토 승인됨' : stageMeta(def.no, result)
     else meta = '대기'
 
-    return { no: def.no, label: def.label, isGate: def.gate !== null, status, meta }
+    return { no: def.no, label: def.label, isGate: def.gate !== null, gateKey: def.gate, status, meta }
   })
 }
 
@@ -108,15 +109,10 @@ function stageMeta(no: string, result: RunResult | null): string {
     case '2':
       return `후보 ${result.schema_candidates.length}건`
     case '3':
-      // done 상태로 여기 오는 건 게이트가 켜져 있었고(꺼졌으면 skipped) 사람이 실제로 승인한 경우뿐.
-      return '승인 완료'
-    case '4':
       return result.retries > 0 ? `재시도 ${result.retries}회` : '생성 완료'
-    case '5':
-      return '승인 완료'
-    case '6':
+    case '4':
       return '3개 체크 통과'
-    case '7':
+    case '5':
       return result.row_count != null ? `${result.row_count}행 · ${result.latency_ms}ms` : ''
     default:
       return ''

@@ -76,6 +76,13 @@ class QdrantFewShotStore:
         self._client.delete(collection_name=self._collection, points_selector=[entry_id])
         return True
 
+    def clear(self) -> None:
+        """컬렉션을 통째로 비운다 — seed_few_shot.py가 매번 처음부터 다시 채우는 데 쓴다
+        (few_shot.json이 소스 오브 트루스, 이 컬렉션은 거기서 파생된 색인이라 재시딩은
+        add-only가 아니라 매번 전체를 다시 만드는 게 맞다). 다음 add() 호출 때 재생성된다."""
+        if self._client.collection_exists(self._collection):
+            self._client.delete_collection(self._collection)
+
     def list_all(self, domain: str | None = None) -> list[SqlKnowledgeEntry]:
         if not self._client.collection_exists(self._collection):
             return []

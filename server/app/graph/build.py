@@ -38,6 +38,7 @@ from app.knowledge.qdrant_connection import get_qdrant_client
 from app.knowledge.qdrant_store import QdrantFewShotStore
 from app.llm.azure_openai_client import AzureOpenAIChatClient
 from app.llm.base import TokenCountingLLM
+from app.llm.router import build_llm_router
 from app.sql.prompt_builder import SqlPromptBuilder, load_prompt_fragments
 from app.sql.retriever import SqlRetriever
 from app.sql.schema_provider import SchemaProvider
@@ -89,7 +90,10 @@ def _route_after_execution(state: GraphState) -> str:
 
 
 def build_graph(domain: DomainConfig, checkpointer=None):
-    llm = TokenCountingLLM(AzureOpenAIChatClient())
+    # intent는 difficulty를 아직 모르는 시점이라 항상 저비용 모델 고정 — 라우팅은
+    # difficulty가 채워진 뒤의 노드(sql_generation, execution)에만 적용된다.
+    intent_llm = TokenCountingLLM(AzureOpenAIChatClient())
+    llm_router = build_llm_router()
     embedder = EmbeddingEngine()
     qdrant_client = get_qdrant_client()
     schema_provider = SchemaProvider(domain.connection)
@@ -102,7 +106,7 @@ def build_graph(domain: DomainConfig, checkpointer=None):
     sql_validator = SqlValidator(allowed_tables)
 
     graph = StateGraph(GraphState)
-    graph.add_node("intent", make_intent_node(llm))
+    graph.add_node("intent", make_intent_node(intent_llm))
     graph.add_node(
         "schema_linking",
         make_schema_linking_node(domain, embedder, qdrant_client, schema_provider),
@@ -110,11 +114,11 @@ def build_graph(domain: DomainConfig, checkpointer=None):
     graph.add_node("schema_review", schema_review_node)
     graph.add_node(
         "sql_generation",
-        make_sql_generation_node(domain, llm, embedder, retriever, prompt_builder),
+        make_sql_generation_node(domain, llm_router, embedder, retriever, prompt_builder),
     )
     graph.add_node("sql_review", sql_review_node)
     graph.add_node("validation", make_validation_node(domain, sql_validator))
-    graph.add_node("execution", make_execution_node(domain, llm))
+    graph.add_node("execution", make_execution_node(domain, llm_router))
 
     graph.add_edge(START, "intent")
     graph.add_edge("intent", "schema_linking")

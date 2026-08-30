@@ -14,6 +14,7 @@ from app.db.postgres_client import get_domain_connection
 from app.domain.loader import DomainConfig
 from app.graph.state import GraphState
 from app.llm.base import TokenCountingLLM
+from app.llm.router import select_llm
 from app.sql.value_anchor import check_value_anchors, extract_code_column_filters
 
 logger = logging.getLogger(__name__)
@@ -21,12 +22,14 @@ logger = logging.getLogger(__name__)
 _MAX_ROWS = 500
 
 
-def make_execution_node(domain: DomainConfig, llm: TokenCountingLLM):
+def make_execution_node(domain: DomainConfig, llm_router: dict[str, TokenCountingLLM]):
     def execution_node(state: GraphState) -> dict:
         sql = state["sql"]
         retry_count = state.get("retry_count", 0)
         run_id = state["run_id"]
-        tags = state.get("tags") or {}
+        difficulty = state.get("difficulty")
+        tags = {**(state.get("tags") or {}), "difficulty": difficulty}
+        llm = select_llm(llm_router, difficulty)
 
         try:
             columns, rows = _execute(domain, sql, _MAX_ROWS)

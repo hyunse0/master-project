@@ -8,6 +8,9 @@ section 5.7 — SSE 스트리밍은 보류된 설계 결정). review_config.sche
 
 GET /runs/{id}는 LangGraph 체크포인터를 다시 읽지 않고 run_manager가 캐싱해둔 마지막
 응답(state_snapshot)만 반환한다 — 새로고침/재접속 시 현재 run 상태를 다시 읽기 위한 것.
+
+GET /runs(목록)도 같은 이유로 체크포인터 대신 runs 레지스트리만 읽는다 — 실행 히스토리
+화면의 목록/필터/검색용이며, 상세는 클릭 시 GET /runs/{id}로 별도 조회한다.
 """
 import logging
 import time
@@ -59,6 +62,7 @@ def _mark_crashed(run_id: str, domain_name: str, question: str, review_config: d
             "execution_error": str(error),
             "retry_error_code": None, "retry_feedback": None,
             "retries": 0, "max_retries": _DEFAULT_TAGS["max_retries"], "latency_ms": None,
+            "sql_edited": False, "sql_before_edit": None, "correction_reason": None,
         },
     )
 
@@ -71,6 +75,9 @@ def _finalize(
     review_config: dict,
     tags: dict,
     latency_ms: int,
+    sql_edited: bool = False,
+    sql_before_edit: str | None = None,
+    correction_reason: str | None = None,
 ) -> dict:
     snapshot = graph.get_state(_thread_config(run_id))
     values = snapshot.values
@@ -121,6 +128,9 @@ def _finalize(
         "retries": values.get("retry_count", 0),
         "max_retries": tags["max_retries"],
         "latency_ms": latency_ms,
+        "sql_edited": sql_edited,
+        "sql_before_edit": sql_before_edit,
+        "correction_reason": correction_reason,
     }
     run_manager.save_snapshot(run_id, status, response)
     return response
@@ -135,6 +145,9 @@ class RunRequest(BaseModel):
 class ResumeRequest(BaseModel):
     confirmed_schema: list[str] | None = None
     sql: str | None = None
+    # sql_review에서 사람이 SQL을 직접 고쳤을 때만 의미가 있다 — 왜 고쳤는지는 diff만으로는
+    # 알 수 없는 도메인 지식이라 사람이 직접 남겨야 나중에 few-shot 큐레이션에 쓸모가 있다.
+    correction_reason: str | None = None
 
 
 @router.post("")
@@ -176,6 +189,17 @@ def create_run(body: RunRequest) -> dict:
     return _finalize(graph, run_id, domain.name, body.question, review_config, tags, latency_ms)
 
 
+@router.get("")
+def list_runs(
+    domain: str | None = None,
+    status: str | None = None,
+    q: str | None = None,
+    limit: int = 20,
+    before: str | None = None,
+) -> dict:
+    return run_manager.list_runs(domain=domain, status=status, q=q, limit=limit, before=before)
+
+
 @router.get("/{run_id}")
 def get_run(run_id: str) -> dict:
     row = run_manager.get(run_id)
@@ -198,6 +222,8 @@ def resume_run(run_id: str, body: ResumeRequest) -> dict:
         raise HTTPException(400, str(e))
     graph = _get_graph(domain.name)
 
+    sql_edited = False
+    sql_before_edit = None
     if row["status"] == "interrupted_schema":
         if body.confirmed_schema is None:
             raise HTTPException(400, "confirmed_schema가 필요합니다")
@@ -206,6 +232,11 @@ def resume_run(run_id: str, body: ResumeRequest) -> dict:
         if body.sql is None:
             raise HTTPException(400, "sql이 필요합니다")
         resume_value = body.sql
+        # 검토 화면에 떠 있던 SQL(생성 직후 스냅샷)과 실제로 제출된 SQL이 다르면 사람이 직접
+        # 고친 것 — 원본은 이 라운드가 끝나면 최종 sql에 덮어써져 사라지므로 여기서 따로
+        # 보존해둔다(few-shot 큐레이션에서 "AI가 뭐라고 짰었는지" before/after로 봐야 하므로).
+        sql_before_edit = row["state_snapshot"].get("sql")
+        sql_edited = body.sql != sql_before_edit
 
     t0 = time.time()
     try:
@@ -218,6 +249,9 @@ def resume_run(run_id: str, body: ResumeRequest) -> dict:
 
     return _finalize(
         graph, run_id, row["domain"], row["question"], row["review_config"], _DEFAULT_TAGS, latency_ms,
+        sql_edited=sql_edited,
+        sql_before_edit=sql_before_edit if sql_edited else None,
+        correction_reason=body.correction_reason if sql_edited else None,
     )
 
 

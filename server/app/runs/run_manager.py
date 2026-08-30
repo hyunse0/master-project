@@ -65,3 +65,107 @@ def get(run_id: str) -> dict | None:
         "review_config": review_config,
         "state_snapshot": state_snapshot,
     }
+
+
+def list_runs(
+    *,
+    domain: str | None = None,
+    status: str | None = None,
+    q: str | None = None,
+    limit: int = 20,
+    before: str | None = None,
+) -> dict:
+    """실행 히스토리 목록. state_snapshot 전체가 아니라 목록에 필요한 필드만 뽑아서 돌려준다 —
+    상세는 클릭 시 GET /runs/{id}로 따로 조회한다."""
+    clauses: list[str] = []
+    params: list = []
+    if domain:
+        clauses.append("domain = %s")
+        params.append(domain)
+    if status:
+        clauses.append("status = %s")
+        params.append(status)
+    if q:
+        clauses.append("question ILIKE %s")
+        params.append(f"%{q}%")
+    if before:
+        clauses.append("created_at < %s")
+        params.append(before)
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+
+    conn = get_app_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT run_id, domain, question, status, created_at, state_snapshot
+                FROM runs
+                {where}
+                ORDER BY created_at DESC
+                LIMIT %s
+                """,
+                (*params, limit + 1),
+            )
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+
+    has_more = len(rows) > limit
+    rows = rows[:limit]
+    runs = [
+        {
+            "run_id": str(run_id),
+            "domain": domain_,
+            "question": question,
+            "status": status_,
+            "created_at": created_at.isoformat(),
+            "retries": (state_snapshot or {}).get("retries", 0),
+            "row_count": (state_snapshot or {}).get("row_count"),
+            "latency_ms": (state_snapshot or {}).get("latency_ms"),
+        }
+        for run_id, domain_, question, status_, created_at, state_snapshot in rows
+    ]
+    return {"runs": runs, "has_more": has_more}
+
+
+def list_edited_sql_runs(domain: str | None = None) -> list[dict]:
+    """사람이 SQL을 직접 고쳐서 승인한 run만 뽑는다 — scripts/curate_few_shot_from_history.py
+    전용. sql_edited는 resume_run이 라운드마다 갱신하므로, 여기 나오는 건 항상 "최종적으로
+    사람이 손댄 SQL"이지 재시도 도중 있었던 중간 수정까지 다 모으진 않는다."""
+    clauses = ["state_snapshot->>'sql_edited' = 'true'"]
+    params: list = []
+    if domain:
+        clauses.append("domain = %s")
+        params.append(domain)
+    where = f"WHERE {' AND '.join(clauses)}"
+
+    conn = get_app_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT run_id, domain, question, created_at, state_snapshot
+                FROM runs
+                {where}
+                ORDER BY created_at DESC
+                """,
+                params,
+            )
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+
+    return [
+        {
+            "run_id": str(run_id),
+            "domain": domain_,
+            "question": question,
+            "created_at": created_at.isoformat(),
+            "sql_before_edit": (state_snapshot or {}).get("sql_before_edit"),
+            "sql": (state_snapshot or {}).get("sql"),
+            "correction_reason": (state_snapshot or {}).get("correction_reason"),
+            "confirmed_schema": (state_snapshot or {}).get("confirmed_schema") or [],
+            "task_type": (state_snapshot or {}).get("task_type"),
+        }
+        for run_id, domain_, question, created_at, state_snapshot in rows
+    ]

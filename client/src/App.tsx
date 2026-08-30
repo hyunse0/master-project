@@ -1,31 +1,44 @@
 import { useCallback, useEffect, useState } from 'react'
 import { domainApi, type DomainStatus, type TableSummary, type TableDetail } from './api/domainClient'
+import { fewshotApi } from './api/fewshotClient'
+import { CostDashboard } from './components/cost/CostDashboard'
+import { FewShotTab } from './components/fewshot/FewShotTab'
+import { HistoryTab } from './components/history/HistoryTab'
 import { QueryRunTab } from './components/queryRun/QueryRunTab'
 import './App.css'
 
 type Phase = 'loading' | 'connected' | 'error'
-type View = 'query' | 'domain'
+type View = 'query' | 'domain' | 'history' | 'fewshot' | 'cost'
 
-const NAV_GROUPS: { label: string; items: { label: string; view?: View; soon: boolean }[] }[] = [
+const NAV_GROUPS: { label: string; items: { label: string; view?: View; soon: boolean; badgeKey?: 'fewshotCandidates' }[] }[] = [
   {
     label: '에이전트',
     items: [
       { label: '질의 실행', view: 'query', soon: false },
-      { label: '실행 히스토리', soon: true },
+      { label: '실행 히스토리', view: 'history', soon: false },
     ],
   },
   {
     label: '에이전트 관리',
     items: [
       { label: '도메인 관리', view: 'domain', soon: false },
+      { label: 'Few-shot 예제 관리', view: 'fewshot', soon: false, badgeKey: 'fewshotCandidates' },
       { label: '검토 정책', soon: true },
       { label: 'Golden Set 평가', soon: true },
-      { label: '비용 대시보드', soon: true },
+      { label: '비용 대시보드', view: 'cost', soon: false },
     ],
   },
 ]
 
-function Sidebar({ current, onSelect }: { current: View; onSelect: (view: View) => void }) {
+function Sidebar({
+  current,
+  onSelect,
+  fewshotCandidateCount,
+}: {
+  current: View
+  onSelect: (view: View) => void
+  fewshotCandidateCount: number
+}) {
   return (
     <aside className="rail">
       <div className="rail-brand">
@@ -46,6 +59,9 @@ function Sidebar({ current, onSelect }: { current: View; onSelect: (view: View) 
               >
                 <span className="rail-dot" />
                 <span className="rail-label">{item.label}</span>
+                {item.badgeKey === 'fewshotCandidates' && fewshotCandidateCount > 0 && (
+                  <span className="rail-badge">{fewshotCandidateCount}</span>
+                )}
                 {item.soon && <span className="rail-soon">SOON</span>}
               </div>
             ))}
@@ -295,6 +311,12 @@ function App() {
   const [detail, setDetail] = useState<TableDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
 
+  const [fewshotCandidateCount, setFewshotCandidateCount] = useState(0)
+  // Few-shot 탭에서 run_id를 클릭하면 히스토리 탭으로 건너가 그 run을 바로 선택해 보여준다 —
+  // HistoryTab이 마운트 시 한 번만 소비하고 onConsumedInitialRun으로 바로 비워달라고 알려온다
+  // (안 비우면 나중에 사이드바로 히스토리에 들어갈 때도 계속 이 run이 다시 선택돼버린다).
+  const [pendingHistoryRunId, setPendingHistoryRunId] = useState<string | null>(null)
+
   const loadStatus = useCallback(() => {
     setPhase('loading')
     setStatusError(null)
@@ -330,6 +352,17 @@ function App() {
       .finally(() => setTablesLoading(false))
   }, [phase])
 
+  // 사이드바 배지는 Few-shot 탭을 실제로 열지 않아도 보여야 해서 여기서 독립적으로 조회한다.
+  useEffect(() => {
+    if (phase !== 'connected' || !status?.domain) return
+    fewshotApi.candidates(status.domain).then((cs) => setFewshotCandidateCount(cs.length)).catch(() => {})
+  }, [phase, status?.domain])
+
+  const openRunInHistory = (runId: string) => {
+    setPendingHistoryRunId(runId)
+    setView('history')
+  }
+
   const selectTable = (table: string) => {
     setSelectedTable(table)
     setDetailLoading(true)
@@ -342,11 +375,23 @@ function App() {
 
   return (
     <div className="shell">
-      <Sidebar current={view} onSelect={setView} />
+      <Sidebar current={view} onSelect={setView} fewshotCandidateCount={fewshotCandidateCount} />
       <main className="main">
-        {view === 'query' ? (
-          <QueryRunTab />
-        ) : (
+        {view === 'query' && <QueryRunTab />}
+        {view === 'history' && (
+          <HistoryTab
+            initialSelectedRunId={pendingHistoryRunId}
+            onConsumedInitialRun={() => setPendingHistoryRunId(null)}
+          />
+        )}
+        {view === 'fewshot' && (
+          <FewShotTab
+            onOpenRun={openRunInHistory}
+            onCandidateCountChange={setFewshotCandidateCount}
+          />
+        )}
+        {view === 'cost' && <CostDashboard onOpenRunInHistory={openRunInHistory} />}
+        {view === 'domain' && (
           <>
             <header className="page-header">
               <h1>도메인 관리</h1>

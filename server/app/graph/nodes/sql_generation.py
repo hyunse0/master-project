@@ -11,6 +11,7 @@ from app.domain.loader import DomainConfig
 from app.embedding.embedder import EmbeddingEngine
 from app.graph.state import GraphState
 from app.llm.base import TokenCountingLLM
+from app.llm.router import select_llm
 from app.sql.canonicalizer import build_embedding_text
 from app.sql.prompt_builder import SqlPromptBuilder
 from app.sql.retriever import RetrievedExample, SqlRetriever
@@ -20,14 +21,16 @@ logger = logging.getLogger(__name__)
 
 def make_sql_generation_node(
     domain: DomainConfig,
-    llm: TokenCountingLLM,
+    llm_router: dict[str, TokenCountingLLM],
     embedder: EmbeddingEngine,
     retriever: SqlRetriever,
     prompt_builder: SqlPromptBuilder,
 ):
     def sql_generation_node(state: GraphState) -> dict:
         run_id = state["run_id"]
-        tags = state.get("tags") or {}
+        difficulty = state.get("difficulty")
+        tags = {**(state.get("tags") or {}), "difficulty": difficulty}
+        llm = select_llm(llm_router, difficulty)
         is_first_attempt = state.get("retry_count", 0) == 0
 
         if is_first_attempt:

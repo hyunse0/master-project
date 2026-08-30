@@ -32,6 +32,7 @@ export function ResultCard({ result }: { result: RunResult }) {
         <div className="result-block">
           <div className="sql-review-label-row">
             <span className="review-section-label">EXECUTED SQL</span>
+            {result.sql_edited && <span className="sql-edited-badge">사용자 수정 반영됨</span>}
           </div>
           <pre className="sql-view-box">{result.sql}</pre>
         </div>
