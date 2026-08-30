@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.db.postgres_client import get_domain_connection  # noqa: E402
 from app.domain.loader import DomainConfig, get_domain  # noqa: E402
 from app.graph.build import build_graph  # noqa: E402
+from app.observability import run_logger  # noqa: E402
 
 
 def _execute_rows(domain: DomainConfig, sql: str) -> set[tuple]:
@@ -46,11 +47,12 @@ def main() -> None:
 
     correct = 0
     for item in golden:
+        run_id = str(uuid.uuid4())
         state = graph.invoke(
             {
                 "question": item["question"],
                 "domain": domain.name,
-                "run_id": str(uuid.uuid4()),
+                "run_id": run_id,
                 "tags": {"experiment": "execution_accuracy"},
                 "review_config": {"schema": False, "sql": False},
             },
@@ -68,6 +70,21 @@ def main() -> None:
                 print(f"  [ERR] {item['question']} — 비교 실패: {e}")
         correct += int(ok)
         print(f"  [{'OK' if ok else 'FAIL'}] {item['question']}")
+
+        # 난이도별 정확도 바(GoldenSetPanel)가 tags->>'difficulty'/'golden_correct'로
+        # run_metrics를 그룹핑해 읽는다 — 새 테이블 없이 기존 관례(D단계) 그대로 재사용.
+        run_logger.log(
+            run_id=run_id,
+            domain=domain.name,
+            question=item["question"],
+            status="success" if ok else "error",
+            sql=generated_sql,
+            tags={
+                "experiment": "execution_accuracy",
+                "difficulty": state.get("difficulty"),
+                "golden_correct": ok,
+            },
+        )
 
     total = len(golden)
     print(f"\nExecution Accuracy: {correct}/{total} ({correct / total:.1%})")

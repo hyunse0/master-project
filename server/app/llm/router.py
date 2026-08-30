@@ -34,5 +34,14 @@ def build_llm_router() -> dict[str, TokenCountingLLM]:
     return {difficulty: tier_client[tier] for difficulty, tier in _TIER_BY_DIFFICULTY.items()}
 
 
-def select_llm(llm_router: dict[str, TokenCountingLLM], difficulty: str | None) -> TokenCountingLLM:
+def select_llm(
+    llm_router:   dict[str, TokenCountingLLM],
+    difficulty:   str | None,
+    routing_mode: str = "on",
+) -> TokenCountingLLM:
+    """routing_mode="off"면 난이도 무관하게 저비용 모델(medium 티어)로 고정한다 —
+    eval/token_cost_comparison.py --compare routing_mode=on,off로 라우팅 자체의
+    비용-정확도 효과를 측정하기 위한 토글(계획 문서 H단계)."""
+    if routing_mode == "off":
+        return llm_router["medium"]
     return llm_router.get(difficulty or "medium", llm_router["medium"])

@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.cost_routes import router as cost_router
 from app.api.domain_routes import router as domain_router
+from app.api.eval_routes import router as eval_router
 from app.api.fewshot_routes import router as fewshot_router
 from app.api.mcp import mcp_server
 from app.api.run_routes import router as run_router
@@ -37,6 +38,7 @@ app.include_router(domain_router)
 app.include_router(fewshot_router)
 app.include_router(run_router)
 app.include_router(cost_router)
+app.include_router(eval_router)
 app.mount("/mcp", _mcp_app)
 
 

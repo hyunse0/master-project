@@ -45,7 +45,7 @@ def make_sql_generation_node(
         difficulty = state.get("difficulty")
         query_type = state.get("query_type") or _DEFAULT_QUERY_TYPE
         tags = {**(state.get("tags") or {}), "difficulty": difficulty, "query_type": query_type}
-        llm = select_llm(llm_router, difficulty)
+        llm = select_llm(llm_router, difficulty, tags.get("routing_mode", "on"))
         is_first_attempt = state.get("retry_count", 0) == 0
 
         if is_first_attempt:

@@ -1,6 +1,6 @@
 """graph.invoke()를 CLI에서 직접 호출해 자동 모드 파이프라인을 확인한다.
 사용: python scripts/run_graph_cli.py --domain poc_prostate --question "전립선암 환자는 총 몇 명인가요?"
-      [--schema-rag-mode rag|full_dump] [--max-retries 2] [--experiment <태그>]
+      [--schema-rag-mode rag|full_dump] [--routing-mode on|off] [--max-retries 2] [--experiment <태그>]
 """
 import argparse
 import sys
@@ -61,12 +61,14 @@ def main() -> None:
     parser.add_argument("--domain", required=True)
     parser.add_argument("--question", required=True)
     parser.add_argument("--schema-rag-mode", default="rag", choices=["rag", "full_dump"])
+    parser.add_argument("--routing-mode", default="on", choices=["on", "off"])
     parser.add_argument("--max-retries", type=int, default=2)
     parser.add_argument("--experiment", default="cli")
     args = parser.parse_args()
 
     tags = {
         "schema_rag_mode": args.schema_rag_mode,
+        "routing_mode": args.routing_mode,
         "max_retries": args.max_retries,
         "experiment": args.experiment,
     }

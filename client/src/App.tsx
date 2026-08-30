@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { domainApi, type DomainStatus, type TableSummary, type TableDetail } from './api/domainClient'
 import { fewshotApi } from './api/fewshotClient'
 import { CostDashboard } from './components/cost/CostDashboard'
+import { EvalTab } from './components/eval/EvalTab'
 import { FewShotTab } from './components/fewshot/FewShotTab'
 import { HistoryTab } from './components/history/HistoryTab'
 import { McpIntegration } from './components/mcp/McpIntegration'
@@ -9,7 +10,7 @@ import { QueryRunTab } from './components/queryRun/QueryRunTab'
 import './App.css'
 
 type Phase = 'loading' | 'connected' | 'error'
-type View = 'query' | 'domain' | 'history' | 'fewshot' | 'cost' | 'mcp'
+type View = 'query' | 'domain' | 'history' | 'fewshot' | 'eval' | 'cost' | 'mcp'
 
 const NAV_GROUPS: { label: string; items: { label: string; view?: View; soon: boolean; badgeKey?: 'fewshotCandidates' }[] }[] = [
   {
@@ -25,7 +26,7 @@ const NAV_GROUPS: { label: string; items: { label: string; view?: View; soon: bo
       { label: '도메인 관리', view: 'domain', soon: false },
       { label: 'Few-shot 예제 관리', view: 'fewshot', soon: false, badgeKey: 'fewshotCandidates' },
       { label: '검토 정책', soon: true },
-      { label: 'Golden Set 평가', soon: true },
+      { label: 'Golden Set 평가', view: 'eval', soon: false },
       { label: '비용 대시보드', view: 'cost', soon: false },
       { label: 'MCP 연동', view: 'mcp', soon: false },
     ],
@@ -392,6 +393,7 @@ function App() {
             onCandidateCountChange={setFewshotCandidateCount}
           />
         )}
+        {view === 'eval' && <EvalTab onOpenRunInHistory={openRunInHistory} />}
         {view === 'cost' && <CostDashboard onOpenRunInHistory={openRunInHistory} />}
         {view === 'mcp' && <McpIntegration />}
         {view === 'domain' && (

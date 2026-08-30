@@ -29,7 +29,7 @@ def make_execution_node(domain: DomainConfig, llm_router: dict[str, TokenCountin
         run_id = state["run_id"]
         difficulty = state.get("difficulty")
         tags = {**(state.get("tags") or {}), "difficulty": difficulty}
-        llm = select_llm(llm_router, difficulty)
+        llm = select_llm(llm_router, difficulty, tags.get("routing_mode", "on"))
 
         try:
             columns, rows = _execute(domain, sql, _MAX_ROWS)
