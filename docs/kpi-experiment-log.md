@@ -20,13 +20,13 @@
 
 ## 2. 실험 하나당 기록 템플릿
 
-새 실험을 기록할 때는 아래 템플릿을 그대로 복사해서 이 문서 [4. 실험 인덱스](#4-실험-인덱스) 아래에 새 절로 추가한다. 실험이 표/그래프가 많아 길어지면 `docs/kpi-<실험명>.md`로 별도 문서를 만들고, 이 문서에는 요약 1~2줄 + 링크만 남긴다(이미 있는 [kpi-schema-rag-mode-ablation.md](./kpi-schema-rag-mode-ablation.md)가 그 예시).
+새 실험을 기록할 때는 아래 템플릿을 그대로 복사해서 이 문서 [4. 실험 인덱스](#4-실험-인덱스) 아래에 새 절로 추가한다. 실험이 표/그래프가 많아 길어지면 `docs/detail/<실험명>.md`로 별도 문서를 만들고, 이 문서 인덱스 표의 "상세" 칸에는 요약 대신 그 링크만 남긴다(이미 있는 [exp-001-baseline.md](./detail/exp-001-baseline.md)가 그 예시).
 
 ```markdown
 ### [실험 ID] 실험 제목
 
 - **날짜**: YYYY-MM-DD
-- **상태**: 🔬 측정중 | ✅ 채택 | ❌ 폐기 | ⏸️ 보류 | 📝 정성적 관찰
+- **상태**: ✅ 채택 | ❌ 폐기 | ⏸️ 보류 | 📝 정성적 관찰
 
 **배경 / 가설**
 왜 이 시도를 했는지, 무엇이 문제라고 판단했는지, 바뀌면 뭐가 좋아질 거라 예상했는지.
@@ -49,19 +49,22 @@
 **분석 및 결정**
 숫자가 왜 이렇게 나왔는지 해석, 트레이드오프가 있다면 명시. 최종적으로 채택했는지/되돌렸는지와 그 이유.
 
+**새롭게 배운 것**
+이 실험을 하면서 예상 밖이었던 점, 다음 실험 설계에 참고할 점, 에이전트/데이터/도구에 대해 새로 알게 된 사실. 결과 숫자와는 별개로 "해보기 전엔 몰랐던 것"만 남긴다 — 예상대로 나온 결과는 여기 쓸 게 없는 게 정상이다.
+
 **한계**
 표본 크기, 통제 못 한 변수 등 이 결과를 과신하면 안 되는 이유.
 ```
 
 ### 필드 설명
-- **상태**는 4번 인덱스 표에 그대로 노출되는 값이라 아래 5개 중 하나로 고정해서 쓴다.
-  - ✅ 채택 — 효과가 확인돼 코드에 남김
+- **상태**는 4번 인덱스 표에 그대로 노출되는 값이라 아래 4개 중 하나로 고정해서 쓴다. **측정이 끝나기 전에는 로그에 남기지 않는다** — "일단 반영해두고 나중에 재본다"가 아니라 측정까지 마친 뒤 결론이 선 상태로만 기록한다(그래서 "측정중" 같은 중간 상태는 없다).
+  - ✅ 채택 — 효과가 확인돼 코드에 남김 (baseline처럼 "되돌릴 대상이 없는" 실험도, 만든 인프라·데이터를 그대로 유지하기로 했다면 채택으로 기록한다)
   - ❌ 폐기 — 효과가 없거나 역효과라 되돌림 (롤백 커밋/PR 링크를 남겨두면 좋음)
-  - 🔬 측정중 — 변경은 반영했고 KPI 측정이 아직 진행 중
   - ⏸️ 보류 — 시도는 설계했지만 아직 착수 전이거나 데이터/인프라 부족으로 중단
   - 📝 정성적 관찰 — 숫자로 재기 애매한 변경(예: 화면 UX 개선)이라 관찰 근거만 기록
 - **측정 방법**은 "무엇과 무엇을 비교했는지"가 핵심 — 반드시 통제 변인 하나만 바꾼 A/B 비교로 설계한다. 두 가지 이상을 동시에 바꾸면 어떤 변경이 효과를 냈는지 구분할 수 없다.
 - **결과** 표는 최소 1개 이상의 정량 지표가 있어야 한다("좋아진 것 같다"는 기록 대상이 아니다).
+- **새롭게 배운 것**은 선택 항목이 아니다 — 정말 아무 것도 새로 안 배웠으면 "예상대로였음"이라고 한 줄이라도 쓴다. 이 필드가 쌓여야 "무작정 찔러본 게 아니라 가설을 세우고 검증하면서 이해도가 늘었다"는 근거가 된다.
 
 ---
 
@@ -69,13 +72,13 @@
 
 | 무엇을 재고 싶을 때 | 도구 | 비고 |
 |---|---|---|
-| SQL이 실제로 정답을 냈는지 (정확도) | `eval/execution_accuracy.py` | `domains/<domain>/golden_set.json` 필요 — 없으면 이 축은 측정 불가, 검증/실행 성공 여부까지만 대체 지표로 사용 |
-| 스키마 링킹이 정답 테이블을 잘 찾는지 | `eval/schema_mapping_accuracy.py` | precision/recall/f1, 난이도별 breakdown 제공 |
-| 결과 요약 문장이 실제 결과와 일치하는지 | `eval/condition_summary_faithfulness.py` | 실패 사례 목록까지 반환 |
-| 재시도/self-correction이 실제로 고쳐내는지 | `eval/self_correction_ablation.py` | retry on/off, 실패유형별 교정 성공률 |
-| 토큰/비용/지연시간/성공률 비교 | `eval/token_cost_comparison.py --compare <tag_key>=<v1>,<v2>` | `tags`에 실험용 키를 하나 추가해 비교축으로 사용 (예: `schema_rag_mode`, `routing_mode`, 새 실험이면 새 키를 정의). 프롬프트 문구 수정처럼 코드 자체를 바꾸는 개선은 런타임 토글이 안 되므로, `--compare phase=before`로 변경 전 한 번, 코드 바꾼 뒤 `--compare phase=after --experiment <같은 실험 ID>`로 한 번 더 돌리면(`--experiment`를 반드시 같게) 자동으로 하나의 비교표로 합쳐진다. `--report-only`를 붙이면 재실행 없이 지금까지 쌓인 표만 다시 본다 |
+| SQL이 실제로 정답을 냈는지 (정확도) | `eval/execution_accuracy.py` | `domains/<domain>/golden_set.json` 필요 — 없으면 이 축은 측정 불가, 검증/실행 성공 여부까지만 대체 지표로 사용. golden_set.json이 있으면 질문당 `graph.invoke()` 1회로 스키마 매핑 정확도·요약 충실도까지 **한 번에 같이 계산**된다(아래 두 항목 참고) — LLM을 3번 태울 필요 없음. "Golden Set 평가" 화면의 골든셋 목록 패널에 있는 "지금 실행" 버튼으로도 실행 가능(백그라운드 job, 진행률 폴링) |
+| 스키마 링킹이 정답 테이블을 잘 찾는지 | `eval/execution_accuracy.py`의 실행 결과에 포함 | 별도 실행 불필요 — 위 execution_accuracy 실행 시 자동으로 함께 나온다. `eval/schema_mapping_accuracy.py`는 그 결과 중 스키마 매핑(precision/recall/f1) 부분만 뽑아 보여주는 얇은 CLI 래퍼로 남아있다 |
+| 결과 요약 문장이 실제 결과와 일치하는지 | golden_set.json 있으면 `eval/execution_accuracy.py`에 포함, 없으면 `eval/condition_summary_faithfulness.py` | golden_set이 있는 도메인은 execution_accuracy 실행에 자동 포함(같은 그래프 실행에서 LLM judge까지 같이 돎). golden_set이 없는 도메인은 `benchmark_queries.json` 기준으로 이 스크립트를 독립 실행 — 정답 SQL이 없어도 판정 가능(골든셋 불필요 축) |
+| 재시도/self-correction이 실제로 고쳐내는지 | `eval/self_correction_ablation.py` | `benchmark_queries.json` 기준(golden_set 불필요), retry on/off, 실패유형별 교정 성공률. "Golden Set 평가" 화면의 "Self-correction 귀인" 패널에 있는 "지금 실행" 버튼으로도 실행 가능(execution_accuracy와 별도 job — graph.stream() 기반이라 같은 루프에 못 합침) |
+| 코드 변경 전/후 토큰·비용·지연시간·성공률 비교 | `eval/token_cost_comparison.py --compare <tag_key>=<v1>,<v2>` | 화면(Eval 탭)에는 노출하지 않는 CLI 전용 도구 — `tags`를 런타임에 읽어 분기하는 기존 토글(`schema_rag_mode`, `routing_mode`)은 값 두 개를 한 번에 콤마로 줘서 그 자리에서 A/B. 프롬프트 문구 수정처럼 코드 자체를 바꾸는 개선은 런타임 토글이 안 되므로, `--compare phase=before`로 변경 전 한 번, 코드 바꾼 뒤 `--compare phase=after --experiment <같은 실험 ID>`로 한 번 더 돌리면(`--experiment`를 반드시 같게) 자동으로 하나의 비교표로 합쳐진다. `--report-only`를 붙이면 재실행 없이 지금까지 쌓인 표만 다시 본다. **모든 실험을 로그에 남길 때 이 도구로 최소 토큰 사용량은 재서 결과표에 넣는다** |
 | run 하나의 토큰/비용 상세 | `GET /runs/{id}/cost`, "비용 대시보드" 화면 | 개별 run 디버깅용, 집계 실험에는 `token_cost_comparison.py` 사용 |
-| 위 스크립트들의 누적 결과를 화면에서 보기 | "Golden Set 평가" 화면(`/eval/*` API) | `run_metrics.tags->>'experiment'`로 실험을 구분해서 쌓이므로, 새 실험을 만들 땐 `tags["experiment"]`에 고유한 이름을 준다 |
+| 위 스크립트들의 결과를 화면에서 보기 | "Golden Set 평가" 화면(`/eval/*` API) | 골든셋 목록(질문+정답 SQL+마지막 실행 결과, 접기/펼치기), 난이도별 정답률, 스키마 매핑 정확도, 요약 충실도(판정 실패 사례 접기/펼치기), Self-correction 귀인 패널로 구성. `run_metrics.tags->>'experiment'`로 실험을 구분해서 쌓이므로, 새 실험을 만들 땐 `tags["experiment"]`에 고유한 이름을 준다. 이 화면의 정답률/충실도 등 패널은 **해당 실험 태그로 지금까지 쌓인 모든 실행을 누적 집계**하므로, 특정 1회 실행분만 보려면 `docs/detail/*.md`에 옮겨적을 때 시간 범위로 직접 걸러야 한다(예: exp-001-baseline.md) |
 
 새로운 종류의 실험이라 위 도구로 못 재는 지표가 필요하면, 기존 `run_logger.log(..., tags={...})` / `token_usage` 테이블 위에 새 스크립트를 추가하는 방식을 우선 고려한다(계획 문서 D단계 관측성 인프라를 그대로 재사용) — 새 테이블을 먼저 만들지 않는다.
 
@@ -87,6 +90,58 @@
 
 | ID | 실험 | 상태 | 핵심 결과 | 상세 |
 |---|---|---|---|---|
-| EXP-001 | 스키마 RAG 검색 vs 전체 스키마 덤프 | ✅ 채택 | 토큰 -45%, 성공률 동일(92.9%), 지연시간 +4s | [kpi-schema-rag-mode-ablation.md](./kpi-schema-rag-mode-ablation.md) |
+| EXP-001 | 100명 합성 데이터 + golden_set 기반 4대 지표 baseline 실측 | ✅ 채택 | 정답률 47.4%(9/19), 스키마매핑 F1 41.3%, 요약충실도 73.3%(11/15), 1차성공 13/14 | [exp-001-baseline.md](./detail/exp-001-baseline.md) |
+| EXP-002 | intent의 미사용 `table_hints`를 `schema_linking` 검색 쿼리에 연결 | ❌ 폐기 | 스키마매핑 F1 41.3% → 40.0%(개선 없음, 소폭 하락) | 아래 |
 
 <!-- 새 실험은 여기부터 표에 행을 추가하고, 아래에 2번 섹션 템플릿으로 상세 절을 이어서 작성한다 -->
+<!-- 상세가 길면 docs/detail/<실험명>.md로 별도 파일을 만들고 여기 표의 "상세" 칸에 링크만 남긴다 -->
+
+### EXP-002 intent의 미사용 `table_hints`를 `schema_linking` 검색 쿼리에 연결
+
+- **날짜**: 2026-08-31
+- **상태**: ❌ 폐기
+
+**배경 / 가설**
+
+코드 리뷰 중 `intent_node`가 `table_hints`(질문에 언급된 테이블/도메인 표현)를 뽑아내지만 `schema_linking_node`를 포함해 어디서도 실제로 읽지 않는다는 걸 확인했다 — LLM 토큰만 쓰고 버려지는 죽은 필드였다. 이 값을 `schema_linking`의 임베딩 검색 쿼리에 섞어 넣으면(현재도 `intent` 요약 문자열을 쿼리에 추가하는 것과 같은 패턴) 스키마 매핑 정확도(EXP-001 baseline: precision 28.4% / recall 90.4% / F1 41.3%)가 개선될 것이라는 가설을 세웠다.
+
+**변경 내용**
+
+- `server/app/graph/nodes/intent.py`: 출력 필드명을 `table_hints` → `schema_hints`로 개명(실제 DB 테이블명이 아니어도 됨을 프롬프트에 명시)
+- `server/app/graph/nodes/schema_linking.py`: 임베딩용 `query_text`에 `관련 키워드: {schema_hints}` 줄을 추가로 붙임
+- `server/app/graph/state.py`: `table_hints` → `schema_hints` 필드명 변경
+- 같은 세션에서 `intent_status`/`intent_error`(LLM 실패 관측성) 필드 추가와 difficulty 판정 기준 프롬프트 명시도 같이 반영됐다 — 이 둘은 스키마 매핑 정확도에 영향을 줄 메커니즘이 없어(관측성 필드는 순수 추가, difficulty 문구는 라우팅에만 영향 — 현재 `LLM_CHAT_DEPLOYMENT_HIGH` 미설정으로 라우팅 자체가 실질 효과 없음) 통제 변인 오염은 없다고 판단했다.
+
+**측정 방법**
+
+- 비교축(A/B): `schema_hints`를 검색 쿼리에 연결하기 전(EXP-001 baseline, 같은 코드베이스·같은 golden_set) vs 연결한 후
+- 사용한 도구: `eval/execution_accuracy.py` (스키마 매핑 precision/recall/F1을 execution accuracy와 동시 산출)
+- 데이터셋: `domains/poc_prostate/golden_set.json` 19문항 — EXP-001과 동일 파일(그 사이 `schema_linking.py`/`retriever.py`/`embedder.py`/golden_set 어느 것도 변경되지 않았음을 git log로 확인 후 baseline 수치를 그대로 재사용)
+- 재현 명령어:
+  ```
+  python eval/execution_accuracy.py --domain poc_prostate
+  ```
+
+**결과**
+
+| 지표 | 변경 전 (EXP-001) | 변경 후 | 차이 |
+|---|---|---|---|
+| Execution Accuracy (19문항) | 9/19 (47.4%) | 9/19 (47.4%) | 없음 |
+| Schema Mapping Precision | 28.4% | 27.4% | -1.0pp |
+| Schema Mapping Recall | 90.4% | 88.6% | -1.8pp |
+| Schema Mapping F1 | 41.3% | 40.0% | -1.3pp |
+
+**분석 및 결정**
+
+precision·recall이 둘 다 소폭 하락했고 개선은 전혀 관측되지 않았다. 19문항 단발 실행(비결정적 LLM 호출, 반복 측정 없음)이라 -1~2pp 차이는 노이즈 범위일 가능성이 높지만, 최소한 "뚜렷한 개선"이라는 가설은 기각됐다. `schema_linking.py`의 쿼리 텍스트 연결을 되돌리고, 다시 죽은 필드로 남기지 않기 위해 `intent_node`의 `schema_hints` 출력 자체를 프롬프트에서 제거했다(불필요한 LLM 출력 토큰 절감 겸).
+
+**새롭게 배운 것**
+
+- intent가 뽑아낸 "질문에 언급된 테이블/도메인 표현"은 실제 스키마 검색 품질에 그대로 도움이 되지 않았다 — 단순히 검색 쿼리 텍스트에 키워드를 추가하는 방식으로는 개선되지 않는다는 뜻이지, 도메인 힌트 자체가 무의미하다는 뜻은 아니다. 재시도한다면 (a) 임베딩 텍스트에 섞는 대신 후보 재정렬/필터링에 쓰거나, (b) EXP-001에서 이미 확인된 "recall 90%·precision 28%" 문제(불필요하게 많은 테이블을 후보로 끌고 옴)에 맞춰 힌트를 후보 축소용으로 쓰는 방향이 더 맞을 수 있다.
+- "일단 넣어보면 나아지겠지"라는 직관이 실측에서 빗나간 사례 — intent 단계 출력을 늘리는 게 항상 다운스트림에 도움이 되는 게 아니라는 걸 숫자로 확인했다.
+
+**한계**
+
+- 골든셋 19문항, 단일 실행(반복 없음) — 통계적 유의성 없음. -1~2pp 차이가 실제 효과인지 LLM 응답 변동성인지 이 실험만으로는 구분 불가.
+- 같은 실행에 `intent_status`/`intent_error`·difficulty 문구 변경이 같이 들어가 있어 엄밀한 단일 변인 통제는 아니었다(다만 위에서 설명한 이유로 이 둘이 스키마 매핑 지표에 영향을 줄 메커니즘은 없다고 판단).
+

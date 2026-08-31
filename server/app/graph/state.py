@@ -15,9 +15,10 @@ class GraphState(TypedDict, total=False):
     metric: str
     dimensions: list[str]
     time_range: dict
-    table_hints: list[str]
     difficulty: str      # easy | medium | hard
     query_type: str      # aggregate | list | cohort — 값 채우는 건 E(9단계)
+    intent_status: str        # success | fallback — LLM 분류 성공 여부
+    intent_error: str | None  # fallback일 때 원인(예외 메시지)
 
     # ── schema_linking_node / schema_review_node 산출 ────────
     schema_candidates: list[str]

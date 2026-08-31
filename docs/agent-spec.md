@@ -17,7 +17,7 @@
 
 ### 2.1 처리 로직
 
-* **Step 1 (Input Analysis)** — `intent_node`(`app/graph/nodes/intent.py`)가 LLM 1회 호출로 질문을 JSON 분류: `task_type`(count/sum/avg/list/trend/…), `metric`, `dimensions`, `time_range`, `table_hints`, `difficulty`(easy/medium/hard). 파싱 실패 시 안전한 기본값으로 폴백.
+* **Step 1 (Input Analysis)** — `intent_node`(`app/graph/nodes/intent.py`)가 LLM 1회 호출로 질문을 JSON 분류: `task_type`(count/sum/avg/list/trend/…), `metric`, `dimensions`, `time_range`, `difficulty`(easy/medium/hard). 파싱 실패 시 안전한 기본값으로 폴백하며 `intent_status`/`intent_error`에 성공 여부를 남긴다. (`table_hints`/`schema_hints`로 스키마 링킹 검색어를 보강하는 시도는 EXP-002에서 효과가 없어 폐기 — `docs/kpi-experiment-log.md` 참고)
 * **Step 2 (Tool Selection & 분기)**
   * `schema_linking_node` — 질문 임베딩으로 Qdrant `schema_{domain}` 컬렉션에서 top-5 테이블 검색. `tags["schema_rag_mode"]="full_dump"`면 검색을 건너뛰고 전체 스키마를 덤프(KPI 비교용 토글).
   * `schema_review_node` — `review_config.schema`가 켜져 있으면 `interrupt("review_schema")`로 실제 정지, 꺼져 있으면 auto-pass.

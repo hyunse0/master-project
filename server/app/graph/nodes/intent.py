@@ -29,8 +29,7 @@ _INTENT_PROMPT = """\
     "to":   "YYYY-MM-DD 또는 null",
     "grain": "day" | "month" | "year" | "none"
   }},
-  "table_hints": ["질문에 명시적으로 언급된 테이블/도메인 유사 표현. 없으면 빈 배열"],
-  "difficulty": "질의 복잡도 — 아래 기준으로 분류:
+  "difficulty": "질의 복잡도 — 자연어 질문 자체의 난이도가 아니라 예상되는 SQL 작성 복잡도 기준. 아래 기준으로 분류:
     easy   — 단일 테이블 단순 집계/조회 (예: 총 환자 수)
     medium — 그룹핑·필터가 있는 조회, 2개 이하 테이블 조인
     hard   — 3개 이상 테이블 조인, 서브쿼리, 코호트 정의, 복합 조건",
@@ -53,9 +52,11 @@ def make_intent_node(llm: TokenCountingLLM):
         try:
             raw = llm.generate(prompt, run_id=run_id, node="intent", tags=tags)
             data = _parse(raw)
+            intent_status, intent_error = "success", None
         except Exception as e:
-            logger.warning("intent 분류 실패 → 기본값 fallback: %s", e)
+            logger.warning("[run=%s] intent 분류 실패 → 기본값 fallback: %s", run_id, e)
             data = {}
+            intent_status, intent_error = "fallback", str(e)
 
         time_range = data.get("time_range") or {}
         time_range = (
@@ -72,9 +73,10 @@ def make_intent_node(llm: TokenCountingLLM):
             "metric": data.get("metric", ""),
             "dimensions": data.get("dimensions", []),
             "time_range": time_range,
-            "table_hints": data.get("table_hints", []),
             "difficulty": data.get("difficulty", "medium"),
             "query_type": data.get("query_type", "list"),
+            "intent_status": intent_status,
+            "intent_error": intent_error,
             "retry_count": 0,
         }
 
