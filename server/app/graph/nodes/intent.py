@@ -53,6 +53,10 @@ def make_intent_node(llm: TokenCountingLLM):
             raw = llm.generate(prompt, run_id=run_id, node="intent", tags=tags)
             data = _parse(raw)
             intent_status, intent_error = "success", None
+            logger.info(
+                "질의 분류 완료 · difficulty=%s query_type=%s task_type=%s",
+                data.get("difficulty"), data.get("query_type"), data.get("task_type"),
+            )
         except Exception as e:
             logger.warning("[run=%s] intent 분류 실패 → 기본값 fallback: %s", run_id, e)
             data = {}

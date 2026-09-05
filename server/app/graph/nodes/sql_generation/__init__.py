@@ -65,6 +65,10 @@ def make_sql_generation_node(
             time_range=state.get("time_range") or {},
             type_guidance=_GUIDANCE_BY_QUERY_TYPE.get(query_type, list_type.GUIDANCE),
         )
+        logger.info(
+            "  [sql_generation] query_type=%s · few-shot 예제 %d건 · 확정 스키마 %d테이블",
+            query_type, len(few_shot_examples), len(state.get("confirmed_schema") or []),
+        )
         raw = llm.generate(prompt, run_id=run_id, node="sql_generation", tags=tags)
 
         if "## VALUE_UNCONFIRMED" in raw:
@@ -80,6 +84,7 @@ def make_sql_generation_node(
             }
 
         sql = _extract_sql(raw)
+        logger.info("  [sql_generation] SQL 생성 완료 (%d자)", len(sql))
         return {
             "few_shot_examples": few_shot_examples,
             "sql": sql,

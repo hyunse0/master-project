@@ -5,6 +5,12 @@ export interface SchemaCandidateDetail {
   columns: string[]
 }
 
+export interface LogLine {
+  ts: string
+  level: 'info' | 'warn' | 'error'
+  msg: string
+}
+
 export interface RunResult {
   run_id: string
   status: 'interrupted_schema' | 'interrupted_sql' | 'success' | 'error'
@@ -32,6 +38,7 @@ export interface RunResult {
   // 사람이 SQL을 실제로 고쳤을 때만(sql_edited=true) 채워진다 — 아니면 둘 다 null.
   sql_before_edit: string | null
   correction_reason: string | null
+  logs: LogLine[]
 }
 
 export interface ReviewConfig {

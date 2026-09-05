@@ -31,6 +31,7 @@ def make_execution_node(domain: DomainConfig, llm_router: dict[str, TokenCountin
         tags = {**(state.get("tags") or {}), "difficulty": difficulty}
         llm = select_llm(llm_router, difficulty, tags.get("routing_mode", "on"))
 
+        logger.info("  [execution] 읽기 전용 커넥션 획득 · statement_timeout=30s")
         try:
             columns, rows = _execute(domain, sql, _MAX_ROWS)
         except TimeoutError as e:
@@ -68,6 +69,7 @@ def make_execution_node(domain: DomainConfig, llm_router: dict[str, TokenCountin
                         "retry_error_code": "ZERO_ROWS_WITH_VALUE_FILTER",
                     }
 
+        logger.info("  [execution] %d행 반환", len(rows))
         summary = _compose_response(llm, run_id, tags, state["question"], sql, columns, rows)
         return {
             "columns": columns,

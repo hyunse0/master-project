@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { domainApi } from '../../api/domainClient'
 import { runsApi } from '../../api/runsClient'
 import type { ReviewConfig } from '../../types'
+import { ExecutionLogPanel } from './ExecutionLogPanel'
 import { FailedCard } from './FailedCard'
 import { ResultCard } from './ResultCard'
 import { RunningWorkCard } from './RunningWorkCard'
@@ -22,7 +23,7 @@ function statusLabel(phase: Phase): string {
 
 export function QueryRunTab() {
   const [domainName, setDomainName] = useState<string | null>(null)
-  const [pendingCfg, setPendingCfg] = useState<ReviewConfig>({ schema: false, sql: true })
+  const [pendingCfg, setPendingCfg] = useState<ReviewConfig>({ schema: false, sql: false })
   const [question, setQuestion] = useState(
     '2023년 이후 로봇 수술을 받은 전립선암 환자 수를 Gleason 위험군별로 알려줘',
   )
@@ -96,6 +97,8 @@ export function QueryRunTab() {
         </section>
 
         {(submitError || error) && <div className="run-error-banner">{submitError ?? error}</div>}
+
+        <ExecutionLogPanel logs={result?.logs ?? []} isRunning={isRunning} />
 
         <section className="progress-card">
           <div className="progress-head">
@@ -176,9 +179,9 @@ export function QueryRunTab() {
           />
         )}
 
-        {phase === 'done' && result && <ResultCard result={result} />}
+        {!showSnapshot && phase === 'done' && result && <ResultCard result={result} />}
 
-        {phase === 'failed' && result && <FailedCard result={result} onRestart={restart} />}
+        {!showSnapshot && phase === 'failed' && result && <FailedCard result={result} onRestart={restart} />}
       </div>
     </>
   )

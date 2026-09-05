@@ -24,6 +24,7 @@ from app.domain.loader import get_domain
 from app.graph.build import build_graph
 from app.graph.checkpointer import get_checkpointer
 from app.observability import run_logger
+from app.observability.run_log_capture import capture_run_logs
 from app.runs import run_manager
 
 logger = logging.getLogger(__name__)
@@ -47,7 +48,10 @@ def _thread_config(run_id: str) -> dict:
     return {"configurable": {"thread_id": f"nl2sql-{run_id}"}, "recursion_limit": 50}
 
 
-def _mark_crashed(run_id: str, domain_name: str, question: str, review_config: dict, error: Exception) -> None:
+def _mark_crashed(
+    run_id: str, domain_name: str, question: str, review_config: dict, error: Exception,
+    logs: list[dict] | None = None,
+) -> None:
     """graph.invoke()가 예외로 죽었을 때 registry가 'running'에 영원히 멈춰있지 않도록
     최소한의 error 스냅샷을 남긴다 — GET /runs/{id}가 그대로 실패 사실을 보여줄 수 있게."""
     run_manager.save_snapshot(
@@ -63,6 +67,7 @@ def _mark_crashed(run_id: str, domain_name: str, question: str, review_config: d
             "retry_error_code": None, "retry_feedback": None,
             "retries": 0, "max_retries": _DEFAULT_TAGS["max_retries"], "latency_ms": None,
             "sql_edited": False, "sql_before_edit": None, "correction_reason": None,
+            "logs": logs or [],
         },
     )
 
@@ -78,6 +83,7 @@ def _finalize(
     sql_edited: bool = False,
     sql_before_edit: str | None = None,
     correction_reason: str | None = None,
+    logs: list[dict] | None = None,
 ) -> dict:
     snapshot = graph.get_state(_thread_config(run_id))
     values = snapshot.values
@@ -132,6 +138,7 @@ def _finalize(
         "sql_edited": sql_edited,
         "sql_before_edit": sql_before_edit,
         "correction_reason": correction_reason,
+        "logs": logs or [],
     }
     run_manager.save_snapshot(run_id, status, response)
     return response
@@ -172,24 +179,25 @@ def execute_run(question: str, domain_name: str | None, review_config: dict | No
     run_manager.create(run_id, domain.name, question, review_config)
 
     t0 = time.time()
-    try:
-        graph.invoke(
-            {
-                "question": question,
-                "domain": domain.name,
-                "run_id": run_id,
-                "tags": tags,
-                "review_config": review_config,
-            },
-            config=_thread_config(run_id),
-        )
-    except Exception as e:
-        logger.exception("run 실행 실패")
-        _mark_crashed(run_id, domain.name, question, review_config, e)
-        raise RuntimeError(f"파이프라인 실행 실패: {e}") from e
+    with capture_run_logs() as log_buffer:
+        try:
+            graph.invoke(
+                {
+                    "question": question,
+                    "domain": domain.name,
+                    "run_id": run_id,
+                    "tags": tags,
+                    "review_config": review_config,
+                },
+                config=_thread_config(run_id),
+            )
+        except Exception as e:
+            logger.exception("run 실행 실패")
+            _mark_crashed(run_id, domain.name, question, review_config, e, logs=log_buffer)
+            raise RuntimeError(f"파이프라인 실행 실패: {e}") from e
     latency_ms = int((time.time() - t0) * 1000)
 
-    return _finalize(graph, run_id, domain.name, question, review_config, tags, latency_ms)
+    return _finalize(graph, run_id, domain.name, question, review_config, tags, latency_ms, logs=log_buffer)
 
 
 @router.post("")
@@ -251,13 +259,16 @@ def resume_run(run_id: str, body: ResumeRequest) -> dict:
         sql_before_edit = row["state_snapshot"].get("sql")
         sql_edited = body.sql != sql_before_edit
 
+    prior_logs = row["state_snapshot"].get("logs") or []
+
     t0 = time.time()
-    try:
-        graph.invoke(Command(resume=resume_value), config=_thread_config(run_id))
-    except Exception as e:
-        logger.exception("run resume 실패")
-        _mark_crashed(run_id, row["domain"], row["question"], row["review_config"], e)
-        raise HTTPException(502, f"resume 실패: {e}")
+    with capture_run_logs() as log_buffer:
+        try:
+            graph.invoke(Command(resume=resume_value), config=_thread_config(run_id))
+        except Exception as e:
+            logger.exception("run resume 실패")
+            _mark_crashed(run_id, row["domain"], row["question"], row["review_config"], e, logs=prior_logs + log_buffer)
+            raise HTTPException(502, f"resume 실패: {e}")
     latency_ms = int((time.time() - t0) * 1000)
 
     return _finalize(
@@ -265,6 +276,7 @@ def resume_run(run_id: str, body: ResumeRequest) -> dict:
         sql_edited=sql_edited,
         sql_before_edit=sql_before_edit if sql_edited else None,
         correction_reason=body.correction_reason if sql_edited else None,
+        logs=prior_logs + log_buffer,
     )
 
 

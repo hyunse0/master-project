@@ -32,6 +32,8 @@ def make_validation_node(domain: DomainConfig, sql_validator: SqlValidator):
                     "retry_error_code": "SCHEMA_CITATION_FAIL",
                 }
 
+            logger.info("  [validation] 스키마 인용 검증 통과")
+
             anchor = check_value_anchors(sql, conn)
             if not anchor.ok:
                 logger.warning("  [validation] value anchor 실패")
@@ -40,6 +42,7 @@ def make_validation_node(domain: DomainConfig, sql_validator: SqlValidator):
                     "retry_feedback": anchor.feedback,
                     "retry_error_code": "VALUE_ANCHOR_FAIL",
                 }
+            logger.info("  [validation] 값 존재 검증 통과")
         finally:
             conn.close()
 
@@ -52,6 +55,7 @@ def make_validation_node(domain: DomainConfig, sql_validator: SqlValidator):
                 "retry_feedback": f"SQL 검증 실패: {err}",
                 "retry_error_code": "SQL_VALIDATION_FAIL",
             }
+        logger.info("  [validation] 안전성 검증 통과")
 
         return {"retry_feedback": None, "retry_error_code": None}
 
