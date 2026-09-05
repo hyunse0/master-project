@@ -22,7 +22,7 @@ class GraphState(TypedDict, total=False):
 
     # ── schema_linking_node / schema_review_node 산출 ────────
     schema_candidates: list[str]
-    schema_candidate_details: list[dict]  # [{table, comment, score, columns}] — 검토 화면 표시용
+    schema_candidate_details: list[dict]  # [{table, comment, score, columns, text}] — 검토 화면 표시 + schema_review의 schema_text 재조립용
     confirmed_schema: list[str]
     schema_text: str
 

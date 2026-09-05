@@ -29,7 +29,7 @@ from app.embedding.embedder import EmbeddingEngine
 from app.graph.nodes.execution import make_execution_node
 from app.graph.nodes.intent import make_intent_node
 from app.graph.nodes.schema_linking import make_schema_linking_node
-from app.graph.nodes.schema_review import schema_review_node
+from app.graph.nodes.schema_review import make_schema_review_node
 from app.graph.nodes.sql_generation import make_sql_generation_node
 from app.graph.nodes.sql_review import sql_review_node
 from app.graph.nodes.validation import make_validation_node
@@ -111,7 +111,7 @@ def build_graph(domain: DomainConfig, checkpointer=None):
         "schema_linking",
         make_schema_linking_node(domain, embedder, qdrant_client, schema_provider),
     )
-    graph.add_node("schema_review", schema_review_node)
+    graph.add_node("schema_review", make_schema_review_node(intent_llm, schema_provider))
     graph.add_node(
         "sql_generation",
         make_sql_generation_node(domain, llm_router, embedder, retriever, prompt_builder),

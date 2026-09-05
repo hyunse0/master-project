@@ -20,41 +20,43 @@
 
 ## 2. 실험 하나당 기록 템플릿
 
-새 실험을 기록할 때는 아래 템플릿을 그대로 복사해서 이 문서 [4. 실험 인덱스](#4-실험-인덱스) 아래에 새 절로 추가한다. 실험이 표/그래프가 많아 길어지면 `docs/detail/<실험명>.md`로 별도 문서를 만들고, 이 문서 인덱스 표의 "상세" 칸에는 요약 대신 그 링크만 남긴다(이미 있는 [exp-001-baseline.md](./detail/exp-001-baseline.md)가 그 예시).
+새 실험을 기록할 때는 아래 템플릿을 채워서 **`docs/detail/<EXP-ID 소문자>-<실험 슬러그>.md` 파일로 저장**하고(예: [exp-001-baseline.md](./detail/exp-001-baseline.md)), 이 문서의 [4. 실험 인덱스](#4-실험-인덱스) 표에는 행을 추가하면서 "상세" 칸에 그 파일 링크만 남긴다 — **길이와 무관하게 매 실험마다 이 방식을 따른다.** 이 문서(`kpi-experiment-log.md`) 본문에는 실험 상세 절을 직접 쓰지 않는다 — 실험이 쌓일수록 이 파일이 무한정 길어지는 걸 막고, 인덱스 표만 봐도 전체 그림이 보이게 하기 위해서다.
 
 ```markdown
-### [실험 ID] 실험 제목
+# [실험 ID] 실험 제목
 
 - **날짜**: YYYY-MM-DD
 - **상태**: ✅ 채택 | ❌ 폐기 | ⏸️ 보류 | 📝 정성적 관찰
 
-**배경 / 가설**
+## 배경 / 가설
 왜 이 시도를 했는지, 무엇이 문제라고 판단했는지, 바뀌면 뭐가 좋아질 거라 예상했는지.
 
-**변경 내용**
+## 변경 내용
 실제로 무엇을 바꿨는지 — 파일 경로, 핵심 diff 요약. 코드가 아니라 "무슨 결정을 내렸는지" 위주로.
 
-**측정 방법**
+## 측정 방법
 - 비교축(A/B): 무엇 vs 무엇
 - 사용한 도구: `eval/execution_accuracy.py` 등 (3번 섹션 표 참고)
 - 데이터셋: 어떤 질의셋으로 몇 건
 - 재현 명령어
 
-**결과**
+## 결과
 
 | 지표 | 변경 전 | 변경 후 | 차이 |
 |---|---|---|---|
 | (정확도/토큰/지연시간/성공률 중 해당하는 것) | | | |
 
-**분석 및 결정**
+## 분석 및 결정
 숫자가 왜 이렇게 나왔는지 해석, 트레이드오프가 있다면 명시. 최종적으로 채택했는지/되돌렸는지와 그 이유.
 
-**새롭게 배운 것**
+## 새롭게 배운 것
 이 실험을 하면서 예상 밖이었던 점, 다음 실험 설계에 참고할 점, 에이전트/데이터/도구에 대해 새로 알게 된 사실. 결과 숫자와는 별개로 "해보기 전엔 몰랐던 것"만 남긴다 — 예상대로 나온 결과는 여기 쓸 게 없는 게 정상이다.
 
-**한계**
+## 한계
 표본 크기, 통제 못 한 변수 등 이 결과를 과신하면 안 되는 이유.
 ```
+
+이 템플릿 그대로 `docs/detail/<파일명>.md`에 저장한다(H1 제목 + H2 섹션) — `kpi-experiment-log.md`에는 절대 붙여넣지 않는다.
 
 ### 필드 설명
 - **상태**는 4번 인덱스 표에 그대로 노출되는 값이라 아래 4개 중 하나로 고정해서 쓴다. **측정이 끝나기 전에는 로그에 남기지 않는다** — "일단 반영해두고 나중에 재본다"가 아니라 측정까지 마친 뒤 결론이 선 상태로만 기록한다(그래서 "측정중" 같은 중간 상태는 없다).
@@ -86,62 +88,16 @@
 
 ## 4. 실험 인덱스
 
-실험이 쌓이면 아래 표만 보고도 전체 그림(무엇을 시도했고, 뭐가 남았고, 뭐가 버려졌는지)이 보이게 유지한다. 새 실험을 추가하면 이 표에 행을 추가하고, 상세 내용은 표 아래(또는 별도 파일)에 둔다.
+실험이 쌓이면 아래 표만 보고도 전체 그림(무엇을 시도했고, 뭐가 남았고, 뭐가 버려졌는지)이 보이게 유지한다. 새 실험을 추가하면 이 표에 행을 추가하고, 상세 내용은 2번 섹션 규칙대로 `docs/detail/`의 별도 파일에 둔다.
 
 | ID | 실험 | 상태 | 핵심 결과 | 상세 |
 |---|---|---|---|---|
 | EXP-001 | 100명 합성 데이터 + golden_set 기반 4대 지표 baseline 실측 | ✅ 채택 | 정답률 47.4%(9/19), 스키마매핑 F1 41.3%, 요약충실도 73.3%(11/15), 1차성공 13/14 | [exp-001-baseline.md](./detail/exp-001-baseline.md) |
-| EXP-002 | intent의 미사용 `table_hints`를 `schema_linking` 검색 쿼리에 연결 | ❌ 폐기 | 스키마매핑 F1 41.3% → 40.0%(개선 없음, 소폭 하락) | 아래 |
+| EXP-002 | intent의 미사용 `table_hints`를 `schema_linking` 검색 쿼리에 연결 | ❌ 폐기 | 스키마매핑 F1 41.3% → 40.0%(개선 없음, 소폭 하락) | [exp-002-table-hints-query-fusion.md](./detail/exp-002-table-hints-query-fusion.md) |
+| EXP-003 | 고정 Top-5 → Top-10 풀 + 최고점수 대비 상대 스코어 컷오프(0.75)로 후보 테이블 수 동적 조정 | ❌ 폐기 | 스키마매핑 precision 28.4%→30.9%(+2.5pp), recall 90.4%→92.1%(+1.7pp)이나 F1 41.3%→39.7%(-1.6pp) | [exp-003-topk-score-cutoff.md](./detail/exp-003-topk-score-cutoff.md) |
+| EXP-004 | Top-10 풀 + 원문 질문-스키마 char-bigram 어휘 overlap으로 최종 Top-5 재정렬 | ❌ 폐기 | Execution Accuracy 47.4%→36.8%(-10.6pp), 스키마매핑 F1 41.3%→40.0%(-1.3pp) — EXP-003보다 뚜렷한 역효과 | [exp-004-char-bigram-rerank.md](./detail/exp-004-char-bigram-rerank.md) |
+| EXP-005 | `schema_review`에 LLM 기반 closed-set 재선정 추가 + `schema_text` 재구성(confirmed_schema가 SQL 생성 프롬프트에 반영 안 되던 공백도 같이 메움) | ❌ 폐기 | 스키마매핑 F1 41.3%→66.8%(+25.5pp, precision +42.7pp)이나 Execution Accuracy 47.4%→42.1%(-5.3pp) — 대리지표 대폭 개선에도 진짜 지표(정답률)는 하락, 표면 어휘 유사도에 낚인 오선택이 원인 | [exp-005-schema-review-llm-rerank.md](./detail/exp-005-schema-review-llm-rerank.md) |
+| EXP-006 | EXP-005 재선정에 컬럼 근거 강제 + recall 편향 프롬프트 보강, `schema_text` 조립을 DB 재조회 없이 캐시(`schema_candidate_details[].text`) 기반으로 전환 | ✅ 채택 | Execution Accuracy 47.4%→47.4%(유지, 손실 없음), 스키마매핑 F1 41.3%→55.2%(+13.9pp) — 단, 토큰 +46.4%·지연시간 약 +25% | [exp-006-schema-review-grounded-prompt.md](./detail/exp-006-schema-review-grounded-prompt.md) |
 
-<!-- 새 실험은 여기부터 표에 행을 추가하고, 아래에 2번 섹션 템플릿으로 상세 절을 이어서 작성한다 -->
-<!-- 상세가 길면 docs/detail/<실험명>.md로 별도 파일을 만들고 여기 표의 "상세" 칸에 링크만 남긴다 -->
-
-### EXP-002 intent의 미사용 `table_hints`를 `schema_linking` 검색 쿼리에 연결
-
-- **날짜**: 2026-08-31
-- **상태**: ❌ 폐기
-
-**배경 / 가설**
-
-코드 리뷰 중 `intent_node`가 `table_hints`(질문에 언급된 테이블/도메인 표현)를 뽑아내지만 `schema_linking_node`를 포함해 어디서도 실제로 읽지 않는다는 걸 확인했다 — LLM 토큰만 쓰고 버려지는 죽은 필드였다. 이 값을 `schema_linking`의 임베딩 검색 쿼리에 섞어 넣으면(현재도 `intent` 요약 문자열을 쿼리에 추가하는 것과 같은 패턴) 스키마 매핑 정확도(EXP-001 baseline: precision 28.4% / recall 90.4% / F1 41.3%)가 개선될 것이라는 가설을 세웠다.
-
-**변경 내용**
-
-- `server/app/graph/nodes/intent.py`: 출력 필드명을 `table_hints` → `schema_hints`로 개명(실제 DB 테이블명이 아니어도 됨을 프롬프트에 명시)
-- `server/app/graph/nodes/schema_linking.py`: 임베딩용 `query_text`에 `관련 키워드: {schema_hints}` 줄을 추가로 붙임
-- `server/app/graph/state.py`: `table_hints` → `schema_hints` 필드명 변경
-- 같은 세션에서 `intent_status`/`intent_error`(LLM 실패 관측성) 필드 추가와 difficulty 판정 기준 프롬프트 명시도 같이 반영됐다 — 이 둘은 스키마 매핑 정확도에 영향을 줄 메커니즘이 없어(관측성 필드는 순수 추가, difficulty 문구는 라우팅에만 영향 — 현재 `LLM_CHAT_DEPLOYMENT_HIGH` 미설정으로 라우팅 자체가 실질 효과 없음) 통제 변인 오염은 없다고 판단했다.
-
-**측정 방법**
-
-- 비교축(A/B): `schema_hints`를 검색 쿼리에 연결하기 전(EXP-001 baseline, 같은 코드베이스·같은 golden_set) vs 연결한 후
-- 사용한 도구: `eval/execution_accuracy.py` (스키마 매핑 precision/recall/F1을 execution accuracy와 동시 산출)
-- 데이터셋: `domains/poc_prostate/golden_set.json` 19문항 — EXP-001과 동일 파일(그 사이 `schema_linking.py`/`retriever.py`/`embedder.py`/golden_set 어느 것도 변경되지 않았음을 git log로 확인 후 baseline 수치를 그대로 재사용)
-- 재현 명령어:
-  ```
-  python eval/execution_accuracy.py --domain poc_prostate
-  ```
-
-**결과**
-
-| 지표 | 변경 전 (EXP-001) | 변경 후 | 차이 |
-|---|---|---|---|
-| Execution Accuracy (19문항) | 9/19 (47.4%) | 9/19 (47.4%) | 없음 |
-| Schema Mapping Precision | 28.4% | 27.4% | -1.0pp |
-| Schema Mapping Recall | 90.4% | 88.6% | -1.8pp |
-| Schema Mapping F1 | 41.3% | 40.0% | -1.3pp |
-
-**분석 및 결정**
-
-precision·recall이 둘 다 소폭 하락했고 개선은 전혀 관측되지 않았다. 19문항 단발 실행(비결정적 LLM 호출, 반복 측정 없음)이라 -1~2pp 차이는 노이즈 범위일 가능성이 높지만, 최소한 "뚜렷한 개선"이라는 가설은 기각됐다. `schema_linking.py`의 쿼리 텍스트 연결을 되돌리고, 다시 죽은 필드로 남기지 않기 위해 `intent_node`의 `schema_hints` 출력 자체를 프롬프트에서 제거했다(불필요한 LLM 출력 토큰 절감 겸).
-
-**새롭게 배운 것**
-
-- intent가 뽑아낸 "질문에 언급된 테이블/도메인 표현"은 실제 스키마 검색 품질에 그대로 도움이 되지 않았다 — 단순히 검색 쿼리 텍스트에 키워드를 추가하는 방식으로는 개선되지 않는다는 뜻이지, 도메인 힌트 자체가 무의미하다는 뜻은 아니다. 재시도한다면 (a) 임베딩 텍스트에 섞는 대신 후보 재정렬/필터링에 쓰거나, (b) EXP-001에서 이미 확인된 "recall 90%·precision 28%" 문제(불필요하게 많은 테이블을 후보로 끌고 옴)에 맞춰 힌트를 후보 축소용으로 쓰는 방향이 더 맞을 수 있다.
-- "일단 넣어보면 나아지겠지"라는 직관이 실측에서 빗나간 사례 — intent 단계 출력을 늘리는 게 항상 다운스트림에 도움이 되는 게 아니라는 걸 숫자로 확인했다.
-
-**한계**
-
-- 골든셋 19문항, 단일 실행(반복 없음) — 통계적 유의성 없음. -1~2pp 차이가 실제 효과인지 LLM 응답 변동성인지 이 실험만으로는 구분 불가.
-- 같은 실행에 `intent_status`/`intent_error`·difficulty 문구 변경이 같이 들어가 있어 엄밀한 단일 변인 통제는 아니었다(다만 위에서 설명한 이유로 이 둘이 스키마 매핑 지표에 영향을 줄 메커니즘은 없다고 판단).
+<!-- 새 실험은 이 표에 행을 추가하고, docs/detail/<EXP-ID 소문자>-<슬러그>.md 파일을 새로 만들어 2번 섹션 템플릿으로 상세를 적은 뒤 "상세" 칸에 그 링크를 남긴다 — 이 파일 본문에는 상세 절을 직접 쓰지 않는다 -->
 

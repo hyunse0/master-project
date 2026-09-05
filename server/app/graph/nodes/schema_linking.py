@@ -56,6 +56,7 @@ def make_schema_linking_node(
                     "comment": p.payload.get("comment"),
                     "score": round(float(p.score), 4),
                     "columns": p.payload.get("columns", []),
+                    "text": p.payload.get("text", ""),
                 })
         else:
             logger.warning(

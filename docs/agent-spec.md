@@ -20,7 +20,7 @@
 * **Step 1 (Input Analysis)** — `intent_node`(`app/graph/nodes/intent.py`)가 LLM 1회 호출로 질문을 JSON 분류: `task_type`(count/sum/avg/list/trend/…), `metric`, `dimensions`, `time_range`, `difficulty`(easy/medium/hard). 파싱 실패 시 안전한 기본값으로 폴백하며 `intent_status`/`intent_error`에 성공 여부를 남긴다. (`table_hints`/`schema_hints`로 스키마 링킹 검색어를 보강하는 시도는 EXP-002에서 효과가 없어 폐기 — `docs/kpi-experiment-log.md` 참고)
 * **Step 2 (Tool Selection & 분기)**
   * `schema_linking_node` — 질문 임베딩으로 Qdrant `schema_{domain}` 컬렉션에서 top-5 테이블 검색. `tags["schema_rag_mode"]="full_dump"`면 검색을 건너뛰고 전체 스키마를 덤프(KPI 비교용 토글).
-  * `schema_review_node` — `review_config.schema`가 켜져 있으면 `interrupt("review_schema")`로 실제 정지, 꺼져 있으면 auto-pass.
+  * `schema_review_node` — `review_config.schema`가 켜져 있으면 `interrupt("review_schema")`로 실제 정지, 꺼져 있으면 LLM(저비용 고정 모델)이 `schema_candidates` 중 질문에 실제 필요한 테이블만 closed-set으로 재선정(`confirmed_schema`)하고, 그 결과로 `schema_text`(SQL 생성 프롬프트의 스키마 설명)도 다시 조립한다 — DB 재조회 없이 `schema_candidate_details[].text`(Qdrant에 이미 색인된 렌더링)로 조립하고, 후보 밖 테이블이 선택된 예외 상황에서만 DB로 폴백한다. 파싱 실패/빈 응답이면 후보 전체를 그대로 유지(fail-safe). EXP-005(단순 재선정)는 Execution Accuracy가 떨어져 폐기, EXP-006(컬럼 근거 강제 + recall 편향 프롬프트로 보강)이 Execution Accuracy 손실 없이 스키마 매핑 F1을 개선해 채택 — `docs/kpi-experiment-log.md` 참고.
   * `sql_generation_node` — few-shot 하이브리드 검색(`retriever.py`) + `prompt_builder.py`로 프롬프트 구성 → LLM 호출. `VALUE_UNCONFIRMED` 응답이면 재시도(최대 `max_retries`), 아니면 `sql_review`로 진행.
   * `sql_review_node` — `review_config.sql` 켜짐 시 `interrupt("review_sql")`.
   * `validation_node` — `SqlValidator`(sqlglot AST: SELECT-only + 허용 테이블) + 스키마 인용 검증 + 값 anchoring을 통과해야 `execution`으로 진행.
