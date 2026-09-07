@@ -1,8 +1,31 @@
+export interface ColumnDetail {
+  data_type: string
+  comment: string | null
+  is_primary_key: boolean
+  is_foreign_key: boolean
+  score: number | null
+}
+
+export interface ColumnTiers {
+  key: string[]
+  relevant: string[]
+  other: string[]
+}
+
+export interface ForeignKeyRef {
+  column: string
+  ref_table: string
+  ref_column: string
+}
+
 export interface SchemaCandidateDetail {
   table: string
   comment: string | null
   score: number
   columns: string[]
+  column_tiers: ColumnTiers
+  column_details: Record<string, ColumnDetail>
+  foreign_keys: ForeignKeyRef[]
 }
 
 export interface LogLine {
@@ -23,6 +46,7 @@ export interface RunResult {
   schema_candidates: string[]
   schema_candidate_details: SchemaCandidateDetail[]
   confirmed_schema: string[]
+  confirmed_columns: Record<string, string[]>
   sql: string | null
   columns: string[]
   rows: Record<string, unknown>[]

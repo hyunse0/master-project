@@ -19,8 +19,8 @@
 
 * **Step 1 (Input Analysis)** — `intent_node`(`app/graph/nodes/intent.py`)가 LLM 1회 호출로 질문을 JSON 분류: `task_type`(count/sum/avg/list/trend/…), `metric`, `dimensions`, `time_range`, `difficulty`(easy/medium/hard). 파싱 실패 시 안전한 기본값으로 폴백하며 `intent_status`/`intent_error`에 성공 여부를 남긴다. (`table_hints`/`schema_hints`로 스키마 링킹 검색어를 보강하는 시도는 EXP-002에서 효과가 없어 폐기 — `docs/kpi-experiment-log.md` 참고)
 * **Step 2 (Tool Selection & 분기)**
-  * `schema_linking_node` — 질문 임베딩으로 Qdrant `schema_{domain}` 컬렉션에서 top-5 테이블 검색. `tags["schema_rag_mode"]="full_dump"`면 검색을 건너뛰고 전체 스키마를 덤프(KPI 비교용 토글).
-  * `schema_review_node` — `review_config.schema`가 켜져 있으면 `interrupt("review_schema")`로 실제 정지, 꺼져 있으면 LLM(저비용 고정 모델)이 `schema_candidates` 중 질문에 실제 필요한 테이블만 closed-set으로 재선정(`confirmed_schema`)하고, 그 결과로 `schema_text`(SQL 생성 프롬프트의 스키마 설명)도 다시 조립한다 — DB 재조회 없이 `schema_candidate_details[].text`(Qdrant에 이미 색인된 렌더링)로 조립하고, 후보 밖 테이블이 선택된 예외 상황에서만 DB로 폴백한다. 파싱 실패/빈 응답이면 후보 전체를 그대로 유지(fail-safe). EXP-005(단순 재선정)는 Execution Accuracy가 떨어져 폐기, EXP-006(컬럼 근거 강제 + recall 편향 프롬프트로 보강)이 Execution Accuracy 손실 없이 스키마 매핑 F1을 개선해 채택 — `docs/kpi-experiment-log.md` 참고.
+  * `schema_linking_node` — 질문 임베딩으로 Qdrant `schema_{domain}` 컬렉션에서 top-5 테이블 검색. `tags["schema_rag_mode"]="full_dump"`면 검색을 건너뛰고 전체 스키마를 덤프(KPI 비교용 토글). 후보 테이블이 확정되면(top-5 각각) `app/sql/column_relevance.py`가 컬럼을 **key(PK/FK, 항상 상세) / relevant(질문 임베딩과 코사인 유사도 상위 N개, 상세) / other(나머지, 이름만 압축)** 3단으로 분류해 `schema_candidate_details[].column_tiers`/`column_details`에 담고, 이 티어링을 반영한 렌더링으로 `text`를 만든다 — 컬럼이 많은 테이블에서 SQL 생성 LLM과 사람 검토자 모두가 어떤 컬럼이 실제로 필요한지 놓치는 문제(EXP-007)를 줄이기 위함.
+  * `schema_review_node` — `review_config.schema`가 켜져 있으면 `interrupt("review_schema")`로 실제 정지하고, 재개 값은 `{"tables": [...], "columns": {table: [col, ...]}}` 형태로 테이블 확정과 함께 테이블별 non-key 컬럼의 상세 노출 여부(체크박스)도 받는다(`columns`는 완전 대체 목록, key 컬럼은 항상 강제 포함). 꺼져 있으면 LLM(저비용 고정 모델)이 `schema_candidates` 중 질문에 실제 필요한 테이블만 closed-set으로 재선정(`confirmed_schema`)하고, 그 결과로 `schema_text`(SQL 생성 프롬프트의 스키마 설명)도 다시 조립한다 — DB 재조회 없이 `schema_candidate_details[]`에 이미 계산된 컬럼 티어링으로 조립하고, 후보 밖 테이블이 선택된 예외 상황에서만 그 테이블 하나만 즉석 introspect+티어링(또는 완전 비압축 폴백)한다. 파싱 실패/빈 응답이면 후보 전체를 그대로 유지(fail-safe). EXP-005(단순 재선정)는 Execution Accuracy가 떨어져 폐기, EXP-006(컬럼 근거 강제 + recall 편향 프롬프트로 보강)이 Execution Accuracy 손실 없이 스키마 매핑 F1을 개선해 채택, EXP-007(컬럼 티어링으로 압축)이 EXP-006이 미시도로 남긴 "압축 포맷 유지 + recall 편향 지침" 조합을 구조적으로 실현 — `docs/kpi-experiment-log.md` 참고.
   * `sql_generation_node` — few-shot 하이브리드 검색(`retriever.py`) + `prompt_builder.py`로 프롬프트 구성 → LLM 호출. `VALUE_UNCONFIRMED` 응답이면 재시도(최대 `max_retries`), 아니면 `sql_review`로 진행.
   * `sql_review_node` — `review_config.sql` 켜짐 시 `interrupt("review_sql")`.
   * `validation_node` — `SqlValidator`(sqlglot AST: SELECT-only + 허용 테이블) + 스키마 인용 검증 + 값 anchoring을 통과해야 `execution`으로 진행.
@@ -51,12 +51,12 @@
 | `validate_schema_citations` (`app/sql/schema_citation_validator.py`) | SQL이 인용한 모든 컬럼이 `information_schema`에 실재하는지 검증(alias/CTE/SELECT 별칭 해석 포함) | `sql: str, conn` | `CitationResult(ok, missing: list[str], feedback: str)` |
 | `check_value_anchors` (`app/sql/value_anchor.py`) | WHERE절 리터럴 값이 실제 컬럼에 존재하는지 DB에 직접 조회해 확인, 없으면 실제 DISTINCT 값을 피드백으로 반환 | `sql: str, conn` | `AnchorResult(ok, anchors, feedback)` |
 | `SqlRetriever.retrieve` (`app/sql/retriever.py`) | few-shot SQL 예제를 하이브리드 스코어(0.5×semantic+0.3×table jaccard+0.2×domain)로 검색 | `embedding, query_tables, query_domain, top_k` | `list[RetrievedExample]` |
-| `SchemaProvider.get_schema_text` (`app/sql/schema_provider.py`) | `information_schema`+`pg_description`+FK로 테이블/컬럼/코멘트를 텍스트로 조합 | `target_tables: list[str] | None` | `schema_text: str` |
+| `SchemaProvider.get_schema_text` / `get_table_info` (`app/sql/schema_provider.py`) | `information_schema`+`pg_description`+FK로 테이블/컬럼/코멘트를 introspect. `get_schema_text`는 완전 비압축 폴백(후보 캐시 미스 등)에만 쓰이고, 정상 경로의 `schema_text`는 `column_relevance.classify_columns_for_tables`/`render_tiered_schema_block`이 컬럼 티어링을 반영해 조립 | `target_tables: list[str] \| None` | `schema_text: str` |
 | `AzureOpenAIChatClient.generate_with_usage` (`app/llm/azure_openai_client.py`) | SK AI Talent Lab 게이트웨이(Azure OpenAI 호환)로 채팅 완성 호출, md5 캐시 | `prompt: str` | `(answer: str, input_tokens: int, output_tokens: int)` |
 | `EmbeddingEngine.embed` / `embed_batch` (`app/embedding/embedder.py`) | 같은 게이트웨이의 `text-embedding-3-small`로 임베딩 | `text: str` / `texts: list[str]` | `list[float]` / `list[list[float]]` |
 | `_execute` (`app/graph/nodes/execution.py`) | 대상 도메인 DB에 SQL 실행 — `statement_timeout=30s`, LIMIT을 안전하게 재조정 | `domain, sql, max_rows` | `(columns: list[str], rows: list[dict])` |
 | `POST /runs` (`app/api/run_routes.py`) | 새 run 시작, interrupt 또는 종료까지 동기 실행 | `question, domain?, review_config?` | run 응답(status/schema_candidates/sql/rows/…) |
-| `POST /runs/{id}/resume` | interrupt된 run 재개(`Command(resume=...)`) | `confirmed_schema` 또는 `sql` | 위와 동일 형식 |
+| `POST /runs/{id}/resume` | interrupt된 run 재개(`Command(resume=...)`) | `confirmed_schema`(+선택적 `confirmed_columns`) 또는 `sql` | 위와 동일 형식 |
 | `GET /runs/{id}` / `GET /runs/{id}/trace` | 캐싱된 마지막 상태 재조회 / 체크포인트 히스토리 조회 | `run_id` | state_snapshot / step 목록 |
 
 ## 4. 지식 베이스 및 메모리 전략 (Context & Memory)
@@ -64,7 +64,7 @@
 ### 4.1 RAG (검색 증강 생성) 전략
 
 * **참조 데이터 소스**: ① 스키마 지식 — 대상 Postgres의 `information_schema`/`pg_description`을 실시간 introspection해 Qdrant `schema_{domain}` 컬렉션에 색인(`app/knowledge/schema_indexer.py`) ② Few-shot SQL 지식 — 도메인 팩의 `few_shot.json`을 `scripts/seed_few_shot.py`로 시딩해 `sql_knowledge_{domain}` 컬렉션에 저장 ③ 도메인 참고사항 — `domains/<domain>/prompt_fragments.yaml`의 자유서술 노트를 프롬프트에 `[도메인 참고사항]` 섹션으로 주입(없으면 생략, 신규 도메인도 즉시 동작).
-* **청킹(Chunking) 방식**: 스키마는 **테이블 단위 1청크**(테이블명+코멘트+컬럼 목록+PK/FK를 하나로 합쳐 임베딩) — "이 질문에 필요한 테이블 집합"을 찾는 게 목적이라 컬럼 단위로 쪼개지 않음. Few-shot은 예제 1건(question+intent+canonical_sql+tables+metrics) = 1청크.
+* **청킹(Chunking) 방식**: 스키마는 **테이블 단위 1청크**(테이블명+코멘트+컬럼 목록+PK/FK를 하나로 합쳐 임베딩) — "이 질문에 필요한 테이블 집합"을 찾는 게 목적이라 컬럼 단위로 쪼개지 않음. **이는 Qdrant 색인/검색(retrieval) 레이어에 한정된 얘기다** — 그 위의 프롬프트 조립 레이어(`schema_review_node`의 `schema_text` 최종 조립)에서는 EXP-007부터 확정된 테이블 각각에 대해 컬럼 단위 관련도 티어링(`column_relevance.py`)을 별도로 적용한다. 즉 "어떤 테이블이 필요한가"는 여전히 테이블 단위 벡터 검색으로 찾고, "그 테이블에서 어떤 컬럼을 상세히 보여줄까"만 컬럼 단위로 압축한다 — 별도 Qdrant 컬렉션이나 재색인 없이 즉석 계산. Few-shot은 예제 1건(question+intent+canonical_sql+tables+metrics) = 1청크.
 * **임베딩 모델**: SK AI Talent Lab LLM 게이트웨이의 `text-embedding-3-small`(1536차원, Azure OpenAI 호환). 원래 계획은 로컬 `BAAI/bge-m3`(sentence-transformers)였으나 사내 게이트웨이 전환 요청으로 교체되며 로컬 torch 의존성을 완전히 제거함.
 * **Vector DB**: Qdrant. 컬렉션명은 도메인별로 파라미터화(`schema_{domain}`, `sql_knowledge_{domain}`), COSINE distance. 임베딩 차원이 바뀌면(과거 1024→1536 전환 사례) `_ensure_collection()`이 자동으로 컬렉션을 지우고 재생성.
 * **검색 전략**: 스키마는 순수 벡터 top-5. Few-shot은 벡터 top-20 후보를 뽑은 뒤 하이브리드 스코어(0.5×semantic + 0.3×table Jaccard + 0.2×domain 일치)로 top-3 재순위.

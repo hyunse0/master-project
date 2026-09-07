@@ -111,7 +111,7 @@ def build_graph(domain: DomainConfig, checkpointer=None):
         "schema_linking",
         make_schema_linking_node(domain, embedder, qdrant_client, schema_provider),
     )
-    graph.add_node("schema_review", make_schema_review_node(intent_llm, schema_provider))
+    graph.add_node("schema_review", make_schema_review_node(intent_llm, schema_provider, embedder))
     graph.add_node(
         "sql_generation",
         make_sql_generation_node(domain, llm_router, embedder, retriever, prompt_builder),

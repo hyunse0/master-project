@@ -14,6 +14,9 @@ export function useRunReview(pendingCfg: ReviewConfig = IDLE_CFG) {
   const [result, setResult] = useState<RunResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [schemaChecked, setSchemaChecked] = useState<Record<string, boolean>>({})
+  // 테이블 → non-key 컬럼명 → 체크 여부. column_tiers.relevant는 기본 체크, other는 기본
+  // 미체크로 시딩된다 — key 컬럼은 항상 강제 포함이라 여기서 따로 추적하지 않는다.
+  const [columnChecked, setColumnChecked] = useState<Record<string, Record<string, boolean>>>({})
   const [sqlDraft, setSqlDraft] = useState('')
   const [correctionReason, setCorrectionReason] = useState('')
   // 사용자가 스테이지 레일에서 직접 클릭해 들여다보고 있는 단계 — null이면 실시간 진행을 따라간다.
@@ -34,6 +37,17 @@ export function useRunReview(pendingCfg: ReviewConfig = IDLE_CFG) {
     setError(null)
     if (r.status === 'interrupted_schema') {
       setSchemaChecked(Object.fromEntries(r.schema_candidates.map((t) => [t, true])))
+      setColumnChecked(
+        Object.fromEntries(
+          r.schema_candidate_details.map((c) => [
+            c.table,
+            Object.fromEntries([
+              ...c.column_tiers.relevant.map((col) => [col, true]),
+              ...c.column_tiers.other.map((col) => [col, false]),
+            ]),
+          ]),
+        ),
+      )
       goToPhase('schema_review')
       return
     }
@@ -51,9 +65,18 @@ export function useRunReview(pendingCfg: ReviewConfig = IDLE_CFG) {
     const confirmed = result.schema_candidate_details
       .map((c) => c.table)
       .filter((t) => schemaChecked[t])
+    // 서버가 기대하는 confirmed_columns는 완전 대체 목록이다 — 체크된 컬럼만 뽑아 보낸다.
+    const confirmedColumns: Record<string, string[]> = {}
+    for (const t of confirmed) {
+      const cols = columnChecked[t] ?? {}
+      confirmedColumns[t] = Object.keys(cols).filter((c) => cols[c])
+    }
     goToPhase('running_after_schema')
     try {
-      const r = await runsApi.resume(result.run_id, { confirmed_schema: confirmed })
+      const r = await runsApi.resume(result.run_id, {
+        confirmed_schema: confirmed,
+        confirmed_columns: confirmedColumns,
+      })
       loadResult(r)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'resume 요청 실패')
@@ -85,6 +108,7 @@ export function useRunReview(pendingCfg: ReviewConfig = IDLE_CFG) {
     setResult(null)
     setError(null)
     setSchemaChecked({})
+    setColumnChecked({})
     setSqlDraft('')
     setCorrectionReason('')
   }
@@ -108,9 +132,14 @@ export function useRunReview(pendingCfg: ReviewConfig = IDLE_CFG) {
 
   return {
     phase, result, error, cfg,
-    schemaChecked, sqlDraft, setSqlDraft, sqlDraftEdited,
+    schemaChecked, columnChecked, sqlDraft, setSqlDraft, sqlDraftEdited,
     correctionReason, setCorrectionReason,
     toggleSchemaCandidate: (t: string) => setSchemaChecked((prev) => ({ ...prev, [t]: !prev[t] })),
+    toggleColumn: (table: string, column: string) =>
+      setColumnChecked((prev) => ({
+        ...prev,
+        [table]: { ...prev[table], [column]: !prev[table]?.[column] },
+      })),
     goToPhase, loadResult, approveSchema, approveSql, reset,
     stages, isRunning, viewedStageNo, reachedIdx, showSnapshot, onSelectStage,
   }

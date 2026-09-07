@@ -10,16 +10,20 @@ LLM/DB 호출)와 분리해둔 이유가 여기 있다: interrupt() 재개 시 �
 만든 schema_text(원본 후보 전체)가 그대로 sql_generation까지 흘러가 confirmed_schema가
 좁혀져도(사람이 검토했든 LLM이 골랐든) SQL 생성 프롬프트에는 반영되지 않는 공백이 있었다
 (EXP-005에서 발견/수정). schema_text 재조립은 DB를 다시 조회하지 않고
-schema_candidate_details[].text(schema_linking이 Qdrant payload에서 이미 가져온 테이블
-렌더링, schema_indexer.py가 색인 시점에 만들어둔 값)를 그대로 이어붙인다 — schema_linking
-단계에서 이미 introspect한 걸 여기서 또 DB에 물어보는 중복 조회(EXP-005 때는 매번
-schema_provider.get_schema_text()를 다시 호출해 테이블당 3개씩 쿼리를 반복했다)를
-없애기 위해서다. 선택된 테이블이 후보 캐시에 없는 예외적인 경우(예: 사람이 후보 밖 테이블을
-직접 추가)에만 schema_provider로 폴백한다.
+schema_candidate_details[]에 schema_linking이 이미 계산해둔 컬럼 티어링(column_tiers/
+column_details/foreign_keys, column_relevance.py)을 그대로 재사용해 조립한다 —
+schema_linking 단계에서 이미 introspect한 걸 여기서 또 DB에 물어보는 중복 조회(EXP-005
+때는 매번 schema_provider.get_schema_text()를 다시 호출해 테이블당 3개씩 쿼리를
+반복했다)를 없애기 위해서다. 선택된 테이블이 후보 캐시에 없는 예외적인 경우(예: 사람이
+후보 밖 테이블을 직접 추가)에만 그 테이블 하나만 즉석 introspect+티어링하거나
+(question_embedding이 있으면), 그마저 안 되면 schema_provider의 완전 비압축 렌더링으로
+폴백한다.
 
-interrupt()에 넘기는 값은 최소 마커면 충분하다 — 검토 화면이 실제로 필요로 하는 데이터
-(schema_candidates/schema_candidate_details)는 이미 GraphState에 있고, API 레이어가
-graph.get_state()로 그 state를 직접 읽어 응답을 구성한다(중복 저장 안 함).
+사람 검토 경로(interrupt)의 재개 값은 `{"tables": [...], "columns": {table: [col, ...]}}`
+형태다 — tables는 확정 테이블 목록(기존과 동일), columns는 테이블별로 사람이 상세 노출을
+선택한 non-key 컬럼의 "완전 대체 목록"(부분 델타 아님, key 컬럼은 항상 강제 포함이라
+포함할 필요 없음). 진행 중이던 체크포인트가 옛 shape(평평한 list[str])로 멈춰 있을 수
+있어 두 shape을 모두 방어적으로 처리한다.
 """
 import json
 import logging
@@ -27,8 +31,10 @@ import re
 
 from langgraph.types import interrupt
 
+from app.embedding.embedder import EmbeddingEngine
 from app.graph.state import GraphState
 from app.llm.base import TokenCountingLLM
+from app.sql.column_relevance import build_column_details, classify_columns_for_tables, render_tiered_schema_block
 from app.sql.schema_provider import SchemaProvider
 
 logger = logging.getLogger(__name__)
@@ -103,37 +109,98 @@ def _select_tables(
     return candidates
 
 
-def _assemble_from_cache(selected: list[str], details: list[dict]) -> str | None:
-    text_by_table = {d["table"]: d.get("text") for d in details if d.get("text")}
-    texts = [text_by_table[t] for t in selected if t in text_by_table]
-    if len(texts) != len(selected):
+def _tier_out_of_cache_table(
+    table: str,
+    question_embedding: list[float] | None,
+    embedder: EmbeddingEngine | None,
+    schema_provider: SchemaProvider,
+) -> str | None:
+    """후보 캐시에 없는 테이블(사람이 후보 밖 테이블을 직접 추가) 하나만 즉석 티어링한다.
+
+    question_embedding/embedder가 없으면(예: full_dump 모드) 압축 없이 완전한 렌더링으로
+    폴백한다 — 실패 시 None을 돌려줘 호출부가 schema_provider의 최종 폴백을 타게 한다.
+    """
+    try:
+        schema, name = table.split(".", 1)
+        info = schema_provider.get_table_info(schema, name)
+    except Exception as e:
+        logger.warning("후보 밖 테이블 %s introspection 실패: %s", table, e)
         return None
-    return "\n\n".join(texts)
+    if question_embedding is None or embedder is None:
+        return SchemaProvider.table_to_text(info)
+    tiers, scores = classify_columns_for_tables([info], question_embedding, embedder)[info.full_name]
+    column_details = build_column_details(info, scores)
+    foreign_keys = [
+        {"column": fk.column, "ref_table": fk.ref_table, "ref_column": fk.ref_column} for fk in info.foreign_keys
+    ]
+    return render_tiered_schema_block(
+        info.full_name, info.comment, column_details, foreign_keys, tiers.key, tiers.relevant, tiers.other,
+    )
 
 
-def make_schema_review_node(llm: TokenCountingLLM, schema_provider: SchemaProvider):
+def _assemble_schema_text(
+    selected: list[str],
+    details: list[dict],
+    confirmed_columns: dict[str, list[str]] | None,
+    question_embedding: list[float] | None,
+    embedder: EmbeddingEngine | None,
+    schema_provider: SchemaProvider,
+) -> str:
+    """선택된 테이블들의 schema_text를 컬럼 티어링을 반영해 재조립한다.
+
+    사람의 confirmed_columns 오버라이드가 있으면 그 테이블의 relevant 티어 대신 사용하고,
+    key 티어는 오버라이드 여부와 무관하게 항상 강제 포함한다(조인 컬럼을 사람이 실수로
+    빼도 SQL 생성이 막히지 않도록). 캐시에 없는 테이블은 즉석 티어링 또는 완전 비압축
+    렌더링으로 개별 폴백한다.
+    """
+    by_table = {d["table"]: d for d in details}
+    blocks = []
+    for table in selected:
+        d = by_table.get(table)
+        if d is None:
+            text = _tier_out_of_cache_table(table, question_embedding, embedder, schema_provider)
+            blocks.append(text if text is not None else schema_provider.get_schema_text(target_tables=[table]))
+            continue
+        key = d["column_tiers"]["key"]
+        override = (confirmed_columns or {}).get(table)
+        relevant = override if override is not None else d["column_tiers"]["relevant"]
+        all_columns = key + d["column_tiers"]["relevant"] + d["column_tiers"]["other"]
+        other = [c for c in all_columns if c not in key and c not in relevant]
+        blocks.append(render_tiered_schema_block(
+            d["table"], d.get("comment"), d["column_details"], d["foreign_keys"], key, relevant, other,
+        ))
+    return "\n\n".join(blocks)
+
+
+def make_schema_review_node(llm: TokenCountingLLM, schema_provider: SchemaProvider, embedder: EmbeddingEngine):
     def schema_review_node(state: GraphState) -> dict:
         candidates = state.get("schema_candidates") or []
         details = state.get("schema_candidate_details") or []
-        review_on = bool((state.get("review_config") or {}).get("schema"))
+        question_embedding = state.get("question_embedding")
 
-        if review_on:
-            selected = interrupt("review_schema")
+        if bool((state.get("review_config") or {}).get("schema")):
+            resumed = interrupt("review_schema")
+            if isinstance(resumed, list):  # 옛 shape(list[str]) — 진행 중이던 체크포인트 호환
+                selected, confirmed_columns = resumed, None
+            else:
+                selected = resumed.get("tables") or []
+                confirmed_columns = resumed.get("columns") or None
         elif not candidates:
             return {"confirmed_schema": []}
         else:
             selected = _select_tables(llm, state, candidates, details)
+            confirmed_columns = None
 
         if not candidates:
-            return {"confirmed_schema": selected}
+            return {"confirmed_schema": selected, "confirmed_columns": confirmed_columns}
 
         if not selected:
             schema_text = schema_provider.get_schema_text(target_tables=None)
         else:
-            schema_text = _assemble_from_cache(selected, details)
-            if schema_text is None:
-                schema_text = schema_provider.get_schema_text(target_tables=selected)
+            schema_text = _assemble_schema_text(
+                selected, details, confirmed_columns, question_embedding, embedder, schema_provider,
+            )
 
-        return {"confirmed_schema": selected, "schema_text": schema_text}
+        return {"confirmed_schema": selected, "confirmed_columns": confirmed_columns, "schema_text": schema_text}
 
     return schema_review_node

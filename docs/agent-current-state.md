@@ -27,7 +27,7 @@ execution --(review_config.sql 꺼짐, 성공 또는 재시도 소진)--> END
 |---|---|---|
 | `intent` | `graph/nodes/intent.py` | 질문을 LLM으로 분류 — `task_type`/`metric`/`dimensions`/`time_range` + **난이도**(`easy`/`medium`/`hard`) + **질의유형**(`aggregate`/`list`/`cohort`) 태깅. 이 시점엔 difficulty를 모르므로 항상 저비용 모델 고정 |
 | `schema_linking` | `graph/nodes/schema_linking.py` | Qdrant `schema_{domain}` 컬렉션에서 질문과 유사한 테이블 후보 검색 |
-| `schema_review` | `graph/nodes/schema_review.py` | `review_config.schema`가 켜져 있으면 `interrupt()`로 정지(사람이 후보 체크박스 조정), 꺼져 있으면 auto-pass |
+| `schema_review` | `graph/nodes/schema_review.py` | `review_config.schema`가 켜져 있으면 `interrupt()`로 정지(사람이 후보 테이블 체크박스 + 테이블별 컬럼 체크박스를 조정 — 핵심/PK-FK 컬럼은 항상 강제 포함, 관련/기타 컬럼만 상세 노출 여부 조정 가능), 꺼져 있으면 auto-pass |
 | `sql_generation` | `graph/nodes/sql_generation/__init__.py` | few-shot 검색(`SqlRetriever`, 하이브리드 스코어) → 질의유형별 프롬프트 가이던스(`aggregate.py`/`list_type.py`/`cohort.py`의 `GUIDANCE` 상수) 주입 → 난이도별 모델(`llm/router.py`)로 SQL 생성. `VALUE_UNCONFIRMED` 감지 시 실제 DB에서 후보값을 조회해 재시도 피드백 생성 |
 | `sql_review` | `graph/nodes/sql_review.py` | `review_config.sql`이 켜져 있으면 `interrupt()`로 정지(사람이 SQL 직접 수정 가능), 꺼져 있으면 auto-pass |
 | `validation` | `graph/nodes/validation.py` | schema citation → value anchor → `SqlValidator`(SELECT-only 등) 3단계 게이트 |
@@ -104,7 +104,7 @@ python scripts/register_domain.py --name <domain> --host ... --dbname ... --sche
 1. 자연어 질문 입력 + `review_config`(스키마 검토/SQL 검토 on-off) 설정 후 실행
 2. **진행 상태 레일**(`StageRail`) — 의도 분류 → 스키마 탐색 → SQL 생성 → 검증 → 실행, 5단계를 스테이지 박스로 표시. 동기 API 특성상 "지금 어느 요청이 떠 있는가" 기준으로 진행 상태를 앵커링(실시간 스트리밍은 아님)
 3. 1단계 결과(난이도/task_type)는 즉시 요약 배너로 표시
-4. **스키마 검토 게이트 켜짐** → `SchemaReviewCard`에서 후보 테이블 체크박스로 확정 → 승인(`resume`)
+4. **스키마 검토 게이트 켜짐** → `SchemaReviewCard`에서 후보 테이블 체크박스로 확정, 체크된 테이블마다 컬럼 패널이 펼쳐져 핵심(PK/FK, 잠금)·관련(기본 체크)·기타(펼쳐야 보이는 이름만 목록, 기본 미체크) 컬럼을 조정 가능 → 승인(`resume`)
 5. **SQL 검토 게이트 켜짐** → `SqlReviewCard`에서 SQL 직접 수정 가능, 수정 시 사유(`correction_reason`) 입력 → 승인(`resume`). 수정된 SQL은 재생성 없이 곧바로 검증으로 흘러감(검증 우회 불가)
 6. 검증 실패 시 스테이지별 체크리스트(스키마 인용/값 존재/안전성/실행)로 실패 지점 표시, 재시도 횟수 배지
 7. 완료 시 `ResultCard` — SQL, 결과 표, 요약 문장 렌더링. 실패 시 `FailedCard`로 재시작 유도
@@ -159,6 +159,7 @@ python scripts/register_domain.py --name <domain> --host ... --dbname ... --sche
 
 ### C. Human-in-the-loop (핵심 슬라이스)
 - [ ] "질의 실행" 화면에서 스키마 검토 게이트를 켜고 질의 실행 → 후보 테이블 체크박스 조정 → 승인(resume) → 다음 단계로 정상 진행
+- [ ] 같은 화면에서 컬럼이 많은 테이블을 체크 → 컬럼 패널이 펼쳐지고 핵심/관련/기타 티어가 구분돼 보이는지, "기타 컬럼 N개 보기"를 펼쳐 컬럼을 추가로 체크했을 때 승인 후 실제 SQL 생성 프롬프트(`schema_text`)에 반영되는지 확인
 - [ ] SQL 검토 게이트를 켜고 질의 실행 → SQL 직접 수정 → 수정 사유 입력 → 승인(resume) → 수정한 SQL 그대로 검증·실행되는지 확인(자동 재생성으로 덮이지 않는지)
 - [ ] 검증 실패를 의도적으로 유발한 뒤(SQL 검토 켠 상태) `sql_review`로 되돌아가는지, `retry_count`와 무관하게 반복되는지 확인
 - [ ] 앱을 재시작한 뒤 검토 대기 중이던 run이 `GET /runs/{id}`로 여전히 조회되는지 확인(PostgresSaver 영속성)

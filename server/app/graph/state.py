@@ -22,9 +22,20 @@ class GraphState(TypedDict, total=False):
 
     # ── schema_linking_node / schema_review_node 산출 ────────
     schema_candidates: list[str]
-    schema_candidate_details: list[dict]  # [{table, comment, score, columns, text}] — 검토 화면 표시 + schema_review의 schema_text 재조립용
+    # [{table, comment, score, columns, text, column_tiers, column_details, foreign_keys}]
+    # column_tiers: {key, relevant, other} 컬럼명 목록(key=PK∪FK, relevant=관련도 상위, other=압축).
+    # column_details: {컬럼명: {data_type, comment, is_primary_key, is_foreign_key, score}} — 전체 컬럼.
+    # text는 이제 column_relevance.render_tiered_schema_block()이 만든 티어링 렌더링.
+    # 검토 화면 표시 + schema_review의 schema_text 재조립(_assemble_schema_text) 양쪽에 쓰인다.
+    schema_candidate_details: list[dict]
     confirmed_schema: list[str]
+    # 사람이 확정한 테이블별 non-key 컬럼의 완전 대체 목록(부분 델타 아님).
+    # None이면(자동 경로) 알고리즘의 column_tiers["relevant"]를 그대로 쓴다.
+    confirmed_columns: dict[str, list[str]] | None
     schema_text: str
+    # schema_linking_node(rag 모드)만 채우는 질문 임베딩 — schema_review_node가 후보 밖
+    # 테이블을 즉석 티어링할 때 재계산 없이 재사용한다. API 응답에는 노출하지 않는다.
+    question_embedding: list[float] | None
 
     # ── sql_generation_node 산출 ──────────────────────────────
     few_shot_examples: list[dict]

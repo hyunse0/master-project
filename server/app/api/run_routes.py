@@ -62,6 +62,7 @@ def _mark_crashed(
             "review_config": review_config,
             "difficulty": None, "query_type": None, "task_type": None,
             "schema_candidates": [], "schema_candidate_details": [], "confirmed_schema": [],
+            "confirmed_columns": {},
             "sql": None, "columns": [], "rows": [], "row_count": None, "summary": None,
             "execution_error": str(error),
             "retry_error_code": None, "retry_feedback": None,
@@ -124,6 +125,7 @@ def _finalize(
         "schema_candidates": values.get("schema_candidates") or [],
         "schema_candidate_details": values.get("schema_candidate_details") or [],
         "confirmed_schema": values.get("confirmed_schema") or [],
+        "confirmed_columns": values.get("confirmed_columns") or {},
         "sql": values.get("sql"),
         "columns": values.get("columns") or [],
         "rows": values.get("rows") or [],
@@ -152,6 +154,7 @@ class RunRequest(BaseModel):
 
 class ResumeRequest(BaseModel):
     confirmed_schema: list[str] | None = None
+    confirmed_columns: dict[str, list[str]] | None = None
     sql: str | None = None
     # sql_review에서 사람이 SQL을 직접 고쳤을 때만 의미가 있다 — 왜 고쳤는지는 diff만으로는
     # 알 수 없는 도메인 지식이라 사람이 직접 남겨야 나중에 few-shot 큐레이션에 쓸모가 있다.
@@ -248,7 +251,7 @@ def resume_run(run_id: str, body: ResumeRequest) -> dict:
     if row["status"] == "interrupted_schema":
         if body.confirmed_schema is None:
             raise HTTPException(400, "confirmed_schema가 필요합니다")
-        resume_value = body.confirmed_schema
+        resume_value = {"tables": body.confirmed_schema, "columns": body.confirmed_columns or {}}
     else:
         if body.sql is None:
             raise HTTPException(400, "sql이 필요합니다")

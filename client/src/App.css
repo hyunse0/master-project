@@ -369,6 +369,7 @@
 .running-bar-track{ height: 4px; border-radius: 2px; background: #eceff3; overflow: hidden; }
 .running-bar-fill{ height: 100%; border-radius: 2px; background: var(--accent); }
 .running-candidate-comment{ font-size: 11px; line-height: 1.4; color: var(--ink-dim); }
+.running-candidate-cols{ font-size: 10px; color: var(--ink-faint); }
 
 .running-check-row{
   display: flex; align-items: flex-start; gap: 10px; padding: 10px 13px; border: 1px solid var(--line-soft);
@@ -412,11 +413,12 @@
 .review-retry-box.danger .review-retry-box-detail{ color: var(--danger-text-soft); }
 
 /* 스키마 후보 카드 그리드 */
-.schema-candidate-grid{ display: grid; grid-template-columns: repeat(auto-fill, minmax(268px, 1fr)); gap: 10px; }
-.schema-candidate-card{ display: flex; align-items: flex-start; gap: 10px; padding: 12px 13px; border: 1px solid var(--line); border-radius: 9px; background: #fff; cursor: pointer; }
+.schema-candidate-grid{ display: grid; grid-template-columns: repeat(auto-fill, minmax(268px, 1fr)); gap: 10px; align-items: start; }
+.schema-candidate-card{ display: flex; flex-direction: column; padding: 12px 13px; border: 1px solid var(--line); border-radius: 9px; background: #fff; }
 .schema-candidate-card:hover{ border-color: var(--accent); }
 .schema-candidate-card.checked{ background: var(--review-bg); border-color: var(--review-line-strong); }
-.schema-candidate-card input{ width: 14px; height: 14px; margin-top: 2px; accent-color: var(--accent); cursor: pointer; flex-shrink: 0; }
+.schema-candidate-head-row{ display: flex; align-items: flex-start; gap: 10px; cursor: pointer; }
+.schema-candidate-head-row input{ width: 14px; height: 14px; margin-top: 2px; accent-color: var(--accent); cursor: pointer; flex-shrink: 0; }
 .schema-candidate-body{ display: flex; flex-direction: column; gap: 5px; min-width: 0; flex: 1; }
 .schema-candidate-top{ display: flex; align-items: center; gap: 7px; }
 .schema-candidate-name{ font-size: 12px; font-weight: 500; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
@@ -424,6 +426,20 @@
 .schema-candidate-score{ font-size: 10.5px; font-weight: 600; color: var(--accent); flex-shrink: 0; }
 .schema-candidate-comment{ font-size: 11px; line-height: 1.4; color: var(--ink-dim); }
 .schema-candidate-cols{ font-size: 10px; color: var(--ink-faint); }
+
+/* 스키마 후보 카드 내부 — 컬럼 티어 패널(핵심/관련 상세, 기타 접힘) */
+.schema-col-panel{ display: flex; flex-direction: column; gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line-faint); }
+.schema-col-group{ display: flex; flex-direction: column; gap: 3px; }
+.schema-col-row{ display: flex; align-items: center; gap: 7px; padding: 2px 0; cursor: pointer; }
+.schema-col-row input{ width: 12px; height: 12px; accent-color: var(--accent); cursor: pointer; flex-shrink: 0; }
+.schema-col-name{ font: 400 11px/1.4 'JetBrains Mono', monospace; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.schema-col-locked{ cursor: default; opacity: .85; }
+.schema-col-locked input{ cursor: default; }
+.schema-col-badge{ font-size: 9px; font-weight: 700; letter-spacing: .06em; color: var(--accent); background: var(--review-bg); border: 1px solid var(--review-line-strong); border-radius: 4px; padding: 1px 5px; flex-shrink: 0; }
+.schema-col-other-disclosure{ font-size: 10.5px; }
+.schema-col-other-disclosure summary{ cursor: pointer; color: var(--ink-soft); padding: 3px 0; }
+.schema-col-other-disclosure[open] summary{ margin-bottom: 4px; }
+.schema-col-other-disclosure .schema-col-group{ padding-left: 4px; }
 
 /* SQL 검토/실행결과 공용 — 코드 블록 */
 .sql-review-label-row{ display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }

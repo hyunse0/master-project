@@ -35,7 +35,12 @@ export const runsApi = {
   // correction_reason은 SQL을 실제로 고쳤을 때만 의미가 있다(그렇지 않으면 서버가 무시한다).
   resume: (
     runId: string,
-    body: { confirmed_schema?: string[]; sql?: string; correction_reason?: string },
+    body: {
+      confirmed_schema?: string[]
+      confirmed_columns?: Record<string, string[]>
+      sql?: string
+      correction_reason?: string
+    },
   ): Promise<RunResult> =>
     fetch(`${API_BASE}/runs/${runId}/resume`, {
       method: 'POST',

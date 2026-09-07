@@ -98,6 +98,7 @@
 | EXP-004 | Top-10 풀 + 원문 질문-스키마 char-bigram 어휘 overlap으로 최종 Top-5 재정렬 | ❌ 폐기 | Execution Accuracy 47.4%→36.8%(-10.6pp), 스키마매핑 F1 41.3%→40.0%(-1.3pp) — EXP-003보다 뚜렷한 역효과 | [exp-004-char-bigram-rerank.md](./detail/exp-004-char-bigram-rerank.md) |
 | EXP-005 | `schema_review`에 LLM 기반 closed-set 재선정 추가 + `schema_text` 재구성(confirmed_schema가 SQL 생성 프롬프트에 반영 안 되던 공백도 같이 메움) | ❌ 폐기 | 스키마매핑 F1 41.3%→66.8%(+25.5pp, precision +42.7pp)이나 Execution Accuracy 47.4%→42.1%(-5.3pp) — 대리지표 대폭 개선에도 진짜 지표(정답률)는 하락, 표면 어휘 유사도에 낚인 오선택이 원인 | [exp-005-schema-review-llm-rerank.md](./detail/exp-005-schema-review-llm-rerank.md) |
 | EXP-006 | EXP-005 재선정에 컬럼 근거 강제 + recall 편향 프롬프트 보강, `schema_text` 조립을 DB 재조회 없이 캐시(`schema_candidate_details[].text`) 기반으로 전환 | ✅ 채택 | Execution Accuracy 47.4%→47.4%(유지, 손실 없음), 스키마매핑 F1 41.3%→55.2%(+13.9pp) — 단, 토큰 +46.4%·지연시간 약 +25% | [exp-006-schema-review-grounded-prompt.md](./detail/exp-006-schema-review-grounded-prompt.md) |
+| EXP-007 | 확정 테이블의 컬럼을 key(PK/FK)/relevant(임베딩 유사도 상위)/other(이름만 압축) 3단으로 티어링해 `schema_text`·테이블 선정 프롬프트 조립 + 사람 검토 UI를 컬럼 단위로 확장 | ✅ 채택 | Execution Accuracy 36.8%→36.8%(유지), 스키마매핑 F1 59.6%→57.2%(-2.4pp) — 토큰 -19.0%, 단 지연시간 +26.1% | [exp-007-column-tiered-schema-context.md](./detail/exp-007-column-tiered-schema-context.md) |
 
 <!-- 새 실험은 이 표에 행을 추가하고, docs/detail/<EXP-ID 소문자>-<슬러그>.md 파일을 새로 만들어 2번 섹션 템플릿으로 상세를 적은 뒤 "상세" 칸에 그 링크를 남긴다 — 이 파일 본문에는 상세 절을 직접 쓰지 않는다 -->
 

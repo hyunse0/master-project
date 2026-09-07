@@ -31,8 +31,8 @@ export function QueryRunTab() {
 
   const {
     phase, result, error, cfg,
-    schemaChecked, sqlDraft, setSqlDraft, sqlDraftEdited, correctionReason, setCorrectionReason,
-    toggleSchemaCandidate,
+    schemaChecked, columnChecked, sqlDraft, setSqlDraft, sqlDraftEdited, correctionReason, setCorrectionReason,
+    toggleSchemaCandidate, toggleColumn,
     goToPhase, loadResult, approveSchema, approveSql, reset,
     stages, isRunning, viewedStageNo, reachedIdx, showSnapshot, onSelectStage,
   } = useRunReview(pendingCfg)
@@ -158,6 +158,8 @@ export function QueryRunTab() {
             candidates={result.schema_candidate_details}
             checked={schemaChecked}
             onToggle={toggleSchemaCandidate}
+            columnChecked={columnChecked}
+            onToggleColumn={toggleColumn}
             onCancel={restart}
             onApprove={approveSchema}
           />

@@ -17,6 +17,10 @@ export function CandidateList({ candidates }: Props) {
             <div className="running-bar-fill" style={{ width: `${Math.round(c.score * 100)}%` }} />
           </div>
           <span className="running-candidate-comment">{c.comment ?? '코멘트 없음'}</span>
+          <span className="running-candidate-cols">
+            핵심 {c.column_tiers.key.length} · 관련 {c.column_tiers.relevant.length} · 기타{' '}
+            {c.column_tiers.other.length}
+          </span>
         </div>
       ))}
     </>
