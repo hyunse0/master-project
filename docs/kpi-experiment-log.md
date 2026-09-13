@@ -18,6 +18,24 @@
 
 ---
 
+## 1.5 채택 판단 원칙 — 대리지표(proxy metric) 단독 개선은 채택 근거가 아니다
+
+[EXP-005](./detail/exp-005-schema-review-llm-rerank.md)에서 스키마 매핑 F1이 +25.5pp 개선됐는데도 진짜 지표인
+Execution Accuracy는 -5.3pp 하락한 사례가 실제로 있었다("표면 어휘 유사도에 낚인 오선택"). 스키마 매핑
+정확도·요약 충실도는 파이프라인 중간 단계를 들여다보는 **진단용 지표**일 뿐, 그 자체가 개선 목표가 아니다 —
+사람이 실제로 원하는 건 최종 SQL이 맞는지(Execution Accuracy)이고, 중간 지표는 "틀렸다면 어느 단계에서
+틀렸는지" 원인 규명에만 쓴다.
+
+그래서 이후 모든 실험은 다음 기준으로 채택/폐기를 판단한다:
+- **Execution Accuracy가 유지되거나 개선됐을 때만** 채택 후보로 본다. 스키마 매핑 F1·요약 충실도가 아무리
+  좋아져도 Execution Accuracy가 떨어지면 폐기한다(대리지표 개선은 부가 근거일 뿐, 단독 채택 사유가 될 수 없다).
+- Execution Accuracy가 동률(유지)일 때는 토큰/지연시간 비용과 스키마 매핑 F1을 타이브레이커로 참고한다
+  ([EXP-006](./detail/exp-006-schema-review-grounded-prompt.md), [EXP-007](./detail/exp-007-column-tiered-schema-context.md)이 이미 이 방식으로 판단됨).
+- golden_set.json이 없어 Execution Accuracy를 못 재는 도메인/상황이라면, 그 실험은 "정성적 관찰"로만
+  기록하고 실측 채택은 보류한다.
+
+---
+
 ## 2. 실험 하나당 기록 템플릿
 
 새 실험을 기록할 때는 아래 템플릿을 채워서 **`docs/detail/<EXP-ID 소문자>-<실험 슬러그>.md` 파일로 저장**하고(예: [exp-001-baseline.md](./detail/exp-001-baseline.md)), 이 문서의 [4. 실험 인덱스](#4-실험-인덱스) 표에는 행을 추가하면서 "상세" 칸에 그 파일 링크만 남긴다 — **길이와 무관하게 매 실험마다 이 방식을 따른다.** 이 문서(`kpi-experiment-log.md`) 본문에는 실험 상세 절을 직접 쓰지 않는다 — 실험이 쌓일수록 이 파일이 무한정 길어지는 걸 막고, 인덱스 표만 봐도 전체 그림이 보이게 하기 위해서다.
@@ -99,6 +117,11 @@
 | EXP-005 | `schema_review`에 LLM 기반 closed-set 재선정 추가 + `schema_text` 재구성(confirmed_schema가 SQL 생성 프롬프트에 반영 안 되던 공백도 같이 메움) | ❌ 폐기 | 스키마매핑 F1 41.3%→66.8%(+25.5pp, precision +42.7pp)이나 Execution Accuracy 47.4%→42.1%(-5.3pp) — 대리지표 대폭 개선에도 진짜 지표(정답률)는 하락, 표면 어휘 유사도에 낚인 오선택이 원인 | [exp-005-schema-review-llm-rerank.md](./detail/exp-005-schema-review-llm-rerank.md) |
 | EXP-006 | EXP-005 재선정에 컬럼 근거 강제 + recall 편향 프롬프트 보강, `schema_text` 조립을 DB 재조회 없이 캐시(`schema_candidate_details[].text`) 기반으로 전환 | ✅ 채택 | Execution Accuracy 47.4%→47.4%(유지, 손실 없음), 스키마매핑 F1 41.3%→55.2%(+13.9pp) — 단, 토큰 +46.4%·지연시간 약 +25% | [exp-006-schema-review-grounded-prompt.md](./detail/exp-006-schema-review-grounded-prompt.md) |
 | EXP-007 | 확정 테이블의 컬럼을 key(PK/FK)/relevant(임베딩 유사도 상위)/other(이름만 압축) 3단으로 티어링해 `schema_text`·테이블 선정 프롬프트 조립 + 사람 검토 UI를 컬럼 단위로 확장 | ✅ 채택 | Execution Accuracy 36.8%→36.8%(유지), 스키마매핑 F1 59.6%→57.2%(-2.4pp) — 토큰 -19.0%, 단 지연시간 +26.1% | [exp-007-column-tiered-schema-context.md](./detail/exp-007-column-tiered-schema-context.md) |
+| EXP-008 | 골든셋을 멀티턴 대화로 확장(23대화/28턴) + eval 러너 턴 지원 추가 — 컨텍스트 주입 전 baseline | ✅ 채택 | Execution Accuracy 전체 32.1%(9/28) — 턴1 39.1%(9/23), 턴2 0.0%(0/4), 턴3 0.0%(0/1). 컨텍스트 주입 없이는 후속 질문 정답률이 완전히 0% | [exp-008-multiturn-golden-set-baseline.md](./detail/exp-008-multiturn-golden-set-baseline.md) |
+| EXP-009 | intent/sql_generation 프롬프트에 직전 1턴(질문/확정테이블/SQL/요약) 컨텍스트 주입 | ✅ 채택 | Execution Accuracy 전체 32.1%→42.9%(+10.8pp) — 턴1 39.1%→39.1%(동일, 회귀 없음), 턴2 0.0%→75.0%(+75pp), 턴3 0.0%→0.0%(표본 1건, 턴1 자체가 오답이었던 케이스) | [exp-009-multiturn-context-injection.md](./detail/exp-009-multiturn-context-injection.md) |
+| EXP-010 | 조인 정합성 정적 검증 게이트 추가(카티션 조인 탐지, DB 조회 불필요) | 📝 정성적 관찰 | 골든셋 28턴 중 발동 0건(정확도 영향 없음) — 로직 자체는 10개 대표 SQL 패턴 단위 테스트로 검증 완료, 실서비스 관측 필요 | [exp-010-join-validity-gate.md](./detail/exp-010-join-validity-gate.md) |
+| EXP-011 | 스키마 후보 풀 확장 — top-N 5→8(A) + FK 1-hop 확장(B) + 컬럼 단위 임베딩 히트(C) | ❌ 폐기 | Execution Accuracy 50.0%→39.3%(-10.7pp), 스키마매핑 F1 58.2%→51.9%(-6.3pp), 요약충실도 95.7%→83.3%(-12.4pp) — 후보가 늘수록 schema_review 재선정 품질이 떨어짐. B는 도메인에 FK 제약이 없어 무효 확인 | [exp-011-schema-candidate-expansion.md](./detail/exp-011-schema-candidate-expansion.md) |
+| EXP-012 | intent_node에 애매성 판단(needs_clarification) 필드 추가 + intent_clarification 재질의 게이트(review_config.intent, 기본 꺼짐) 신설 | ✅ 채택 | 턴1(통제군) 39.1%→39.1%(회귀 없음). 재질의 기능은 골든셋으로 측정 불가 — 수동 시나리오로 interrupt→답변→재분류→SQL 반영 전체 사이클 검증 완료 | [exp-012-intent-clarification-gate.md](./detail/exp-012-intent-clarification-gate.md) |
 
 <!-- 새 실험은 이 표에 행을 추가하고, docs/detail/<EXP-ID 소문자>-<슬러그>.md 파일을 새로 만들어 2번 섹션 템플릿으로 상세를 적은 뒤 "상세" 칸에 그 링크를 남긴다 — 이 파일 본문에는 상세 절을 직접 쓰지 않는다 -->
 

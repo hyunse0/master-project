@@ -1,6 +1,7 @@
 """도메인 하나에 바인딩된 LangGraph 조립.
 
-  START → intent → schema_linking → schema_review → sql_generation
+  START → intent → intent_clarification → schema_linking → schema_review → sql_generation
+  intent_clarification --(review_config.intent 켜짐, needs_clarification, 재질의 미소진)--> intent(재분류)
   sql_generation --(VALUE_UNCONFIRMED, retry_count<max_retries)--> sql_generation
   sql_generation --(sql 확보)--> sql_review → validation
   validation --(review_config.sql 켜짐, 실패)--> sql_review
@@ -19,6 +20,11 @@ auto-pass로 지금까지와 동일하게 동작하며, 이 경로는 checkpoint
 review_config.sql이 켜져 있을 때 검증/실행 실패를 sql_generation이 아니라 sql_review로
 되돌리는 이유: 사람이 이미 승인한 SQL을 자동 재생성으로 몰래 덮지 않기 위해서다(계획 문서
 section 5.5) — retry_count 상한과 무관하게 사람이 직접 고치거나 재승인할 때까지 반복된다.
+
+intent_clarification도 review_config.intent 게이트로 켜고 끈다(schema_review/sql_review와
+같은 성격) — 꺼져 있으면(기본) intent가 모호하다고 판단해도 멈추지 않고 그대로 진행한다.
+켜져 있고 실제로 모호하면 interrupt()로 멈춰 사용자 답변을 받고 intent로 되돌아가 재분류—
+1회 상한(intent_clarification_node의 clarification_rounds)이라 무한 루프는 없다.
 """
 import logging
 
@@ -28,6 +34,7 @@ from app.domain.loader import DomainConfig
 from app.embedding.embedder import EmbeddingEngine
 from app.graph.nodes.execution import make_execution_node
 from app.graph.nodes.intent import make_intent_node
+from app.graph.nodes.intent_clarification import intent_clarification_node
 from app.graph.nodes.schema_linking import make_schema_linking_node
 from app.graph.nodes.schema_review import make_schema_review_node
 from app.graph.nodes.sql_generation import make_sql_generation_node
@@ -63,6 +70,12 @@ def _route_after_sql_generation(state: GraphState) -> str:
 
 def _sql_review_enabled(state: GraphState) -> bool:
     return bool((state.get("review_config") or {}).get("sql"))
+
+
+def _route_after_intent_clarification(state: GraphState) -> str:
+    if state.get("clarification_answer"):
+        return "intent"
+    return "schema_linking"
 
 
 def _route_after_validation(state: GraphState) -> str:
@@ -107,6 +120,7 @@ def build_graph(domain: DomainConfig, checkpointer=None):
 
     graph = StateGraph(GraphState)
     graph.add_node("intent", make_intent_node(intent_llm))
+    graph.add_node("intent_clarification", intent_clarification_node)
     graph.add_node(
         "schema_linking",
         make_schema_linking_node(domain, embedder, qdrant_client, schema_provider),
@@ -121,7 +135,12 @@ def build_graph(domain: DomainConfig, checkpointer=None):
     graph.add_node("execution", make_execution_node(domain, llm_router))
 
     graph.add_edge(START, "intent")
-    graph.add_edge("intent", "schema_linking")
+    graph.add_edge("intent", "intent_clarification")
+    graph.add_conditional_edges(
+        "intent_clarification",
+        _route_after_intent_clarification,
+        {"intent": "intent", "schema_linking": "schema_linking"},
+    )
     graph.add_edge("schema_linking", "schema_review")
     graph.add_edge("schema_review", "sql_generation")
     graph.add_conditional_edges(

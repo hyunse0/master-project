@@ -24,6 +24,23 @@ CREATE INDEX IF NOT EXISTS runs_domain_created_idx ON runs (domain, created_at D
 -- 구분도 이 컬럼 하나로 처리된다(C단계, data-access-copilot-plan.md section 5).
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS state_snapshot JSONB NOT NULL DEFAULT '{}';
 
+-- 멀티턴(F단계) — 대화 1건 = run(턴) 여러 건. LangGraph 체크포인터의 thread_id는 지금처럼
+-- run(턴)마다 새로 발급하고(interrupt/resume 로직 무변경), "대화"라는 개념은 이 테이블과
+-- runs.conversation_id로만 앱 레이어에서 관리한다 — 자세한 근거는 docs/kpi-experiment-log.md
+-- 멀티턴 설계 항목 참고.
+CREATE TABLE IF NOT EXISTS conversations (
+  conversation_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  domain          TEXT NOT NULL,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS conversation_id UUID REFERENCES conversations(conversation_id);
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS turn_no        INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS parent_run_id  UUID REFERENCES runs(run_id);
+
+CREATE INDEX IF NOT EXISTS runs_conversation_idx ON runs (conversation_id, turn_no);
+
 -- 타겟 도메인 접속정보. 실서비스에서는 사용자가 화면으로 직접 입력하는 값이라 .env가 아니라
 -- 여기 저장한다. db_password_enc는 평문이 아니라 app/db/encryption.py(Fernet, APP_SECRET_KEY)로
 -- 암호화된 바이트 — 앱 레벨에서 암복호화하며, DB 안에서 키를 다루지 않는다(쿼리 로그 노출 방지).
@@ -43,6 +60,19 @@ CREATE TABLE IF NOT EXISTS domain_connections (
 
 -- 에이전트가 동시에 쓰는 도메인은 항상 최대 1개 — 화면/코드가 아니라 제약으로 강제
 CREATE UNIQUE INDEX IF NOT EXISTS one_active_domain ON domain_connections (is_active) WHERE is_active;
+
+-- 게이트웨이 배포명 선택(LOW/HIGH/JUDGE 채팅 모델 + 임베딩 모델). domain_connections와 같은
+-- 이유로 .env가 아니라 여기 저장 — 사용자가 비용 대시보드 화면에서 런타임에 바꾸는 값이다.
+-- 싱글톤(항상 id=1 한 행)이라 도메인별이 아니라 앱 전체에 적용된다. 컬럼이 NULL이면
+-- app/llm/router.py·app/embedding/embedder.py가 기존 .env 기본값으로 폴백한다.
+CREATE TABLE IF NOT EXISTS model_config (
+  id          INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+  chat_low    TEXT,
+  chat_high   TEXT,
+  chat_judge  TEXT,
+  embedding   TEXT,
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 
 -- 노드별 LLM 호출 1건당 토큰 사용량. run_id는 runs.run_id를 참조할 수도, CLI/eval 실행처럼
 -- registry가 없는 ad-hoc uuid일 수도 있어 FK는 걸지 않는다.

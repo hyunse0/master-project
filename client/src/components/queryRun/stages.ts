@@ -48,7 +48,7 @@ const STAGE_DEFS: { no: string; label: string; gate: 'schema' | 'sql' | null }[]
  * validation_node는 첫 실패에서 멈추므로 그 앞 스테이지들은 실제로 통과한 것이 맞다. */
 export function failedStageIndex(code: string | null): number {
   if (code === 'VALUE_UNCONFIRMED') return 2 // SQL 생성 — 값 확정 실패
-  if (code === 'SCHEMA_CITATION_FAIL' || code === 'VALUE_ANCHOR_FAIL' || code === 'SQL_VALIDATION_FAIL') return 3 // 검증
+  if (code === 'JOIN_INVALID' || code === 'SCHEMA_CITATION_FAIL' || code === 'VALUE_ANCHOR_FAIL' || code === 'SQL_VALIDATION_FAIL') return 3 // 검증
   if (code === 'TIMEOUT' || code === 'UNSAFE_SQL' || code === 'ZERO_ROWS_WITH_VALUE_FILTER') return 4 // 실행
   return -1
 }
@@ -112,10 +112,13 @@ function stageMeta(no: string, result: RunResult | null): string {
     }
     case '2':
       return `후보 ${result.schema_candidates.length}건`
-    case '3':
-      return result.retries > 0 ? `재시도 ${result.retries}회` : '생성 완료'
+    case '3': {
+      const base = result.retries > 0 ? `재시도 ${result.retries}회` : '생성 완료'
+      const model = result.node_models?.sql_generation
+      return model ? `${base} · ${model}` : base
+    }
     case '4':
-      return '3개 체크 통과'
+      return '4개 체크 통과'
     case '5':
       return result.row_count != null ? `${result.row_count}행 · ${result.latency_ms}ms` : ''
     default:
@@ -152,30 +155,39 @@ export function buildChecks(result: RunResult): CheckItem[] {
     return [{ name: 'SQL 생성 — 값 확정', detail: feedback, ok: false }]
   }
 
+  const join: CheckItem = { name: '조인 정합성 검증', detail: '통과', ok: true }
   const citation: CheckItem = { name: '스키마 인용 검증', detail: '통과', ok: true }
   const anchor: CheckItem = { name: '값 존재 검증', detail: '통과', ok: true }
   const safety: CheckItem = { name: '안전성 검증', detail: '통과', ok: true }
 
+  if (code === 'JOIN_INVALID') {
+    join.ok = false
+    join.detail = feedback
+    citation.detail = '확인 전'
+    anchor.detail = '확인 전'
+    safety.detail = '확인 전'
+    return [join, citation, anchor, safety]
+  }
   if (code === 'SCHEMA_CITATION_FAIL') {
     citation.ok = false
     citation.detail = feedback
     anchor.detail = '확인 전'
     safety.detail = '확인 전'
-    return [citation, anchor, safety]
+    return [join, citation, anchor, safety]
   }
   if (code === 'VALUE_ANCHOR_FAIL') {
     anchor.ok = false
     anchor.detail = feedback
     safety.detail = '확인 전'
-    return [citation, anchor, safety]
+    return [join, citation, anchor, safety]
   }
   if (code === 'SQL_VALIDATION_FAIL') {
     safety.ok = false
     safety.detail = feedback
-    return [citation, anchor, safety]
+    return [join, citation, anchor, safety]
   }
 
   // TIMEOUT / UNSAFE_SQL / ZERO_ROWS_WITH_VALUE_FILTER — 검증은 전부 통과하고 실행 단계에서 실패
   const execution: CheckItem = { name: '실행', detail: feedback, ok: false }
-  return [citation, anchor, safety, execution]
+  return [join, citation, anchor, safety, execution]
 }

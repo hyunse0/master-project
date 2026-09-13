@@ -20,11 +20,26 @@ export interface RunListParams {
 
 export const runsApi = {
   // POST /runs는 동기 호출 — 다음 interrupt(스키마/SQL 검토) 또는 그래프 종료까지 블로킹한다.
-  create: (question: string, domain?: string, reviewConfig?: ReviewConfig): Promise<RunResult> =>
+  // conversationId를 넘기면 그 대화의 다음 턴으로 이어지고(서버가 직전 턴 컨텍스트를 프롬프트에
+  // 주입한다), 생략하면 새 대화의 1턴째로 시작한다. carrySchema는 turn_no>1일 때만 의미가
+  // 있고, true면 schema_linking이 새로 검색하지 않고 직전 턴의 확정 스키마를 그대로 재사용한다.
+  create: (
+    question: string,
+    domain?: string,
+    reviewConfig?: ReviewConfig,
+    conversationId?: string,
+    carrySchema?: boolean,
+  ): Promise<RunResult> =>
     fetch(`${API_BASE}/runs`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question, domain, review_config: reviewConfig }),
+      body: JSON.stringify({
+        question,
+        domain,
+        review_config: reviewConfig,
+        conversation_id: conversationId,
+        carry_schema: carrySchema,
+      }),
     }).then(handle<RunResult>),
 
   // 새로고침/재접속 시 현재 run 상태를 다시 읽기 위한 것 — 진행 중 폴링용이 아니다

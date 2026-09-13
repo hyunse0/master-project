@@ -4,13 +4,15 @@ import type { LogLine } from '../../types'
 interface Props {
   logs: LogLine[]
   isRunning: boolean
+  // 멀티턴에서 여러 턴의 로그를 한 패널에 이어붙여 보여줄 때 붙이는 라벨(예: "· 3 turns").
+  countSuffix?: string
 }
 
 /** 그래프 노드가 실제로 찍는 로그(app.* 로거)를 run 단위로 모아 보여주는 패널.
  * POST /runs·resume이 동기 블로킹이라 줄 단위 실시간 스트리밍은 아니고, 요청이 끝날 때마다
  * 그 라운드에서 캡처된 로그가 한 번에 반영된다 — isRunning 동안은 "다음 라운드 로그 수신
  * 대기" 정도의 의미로만 tailing 표시를 보여준다. */
-export function ExecutionLogPanel({ logs, isRunning }: Props) {
+export function ExecutionLogPanel({ logs, isRunning, countSuffix }: Props) {
   const [openOverride, setOpenOverride] = useState<boolean | null>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
   const open = openOverride ?? true
@@ -33,7 +35,7 @@ export function ExecutionLogPanel({ logs, isRunning }: Props) {
       >
         <span className="log-chevron">{open ? '⌄' : '›'}</span>
         <span className="log-panel-title">실행 로그</span>
-        <span className="log-count-label">{logs.length} lines</span>
+        <span className="log-count-label">{logs.length} lines{countSuffix ?? ''}</span>
         {warnCount > 0 && <span className="log-warn-badge">warn {warnCount}</span>}
         <div className="header-spacer" />
         <span className="log-tail-hint">
@@ -48,6 +50,7 @@ export function ExecutionLogPanel({ logs, isRunning }: Props) {
           )}
           {logs.map((l, i) => (
             <div className="log-line" key={i}>
+              {l.turn != null && <span className="log-turn">T{l.turn}</span>}
               <span className="log-ts">{l.ts}</span>
               <span className={`log-level log-level-${l.level}`}>{l.level}</span>
               <span className={`log-msg log-msg-${l.level}`}>{l.msg}</span>

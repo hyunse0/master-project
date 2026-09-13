@@ -5,6 +5,7 @@ app/db/postgres_client(대상 도메인 접속 정보 기반)로 교체했다.
 """
 import logging
 import re
+from decimal import Decimal
 
 import psycopg2
 import psycopg2.extras
@@ -107,6 +108,15 @@ def _cap_limit(sql: str, max_rows: int) -> str:
     return tree.limit(max_rows).sql(dialect="postgres")
 
 
+def _json_safe(value):
+    """psycopg가 numeric 컬럼을 Decimal로 돌려주는데, run_manager.save_snapshot()의
+    json.dumps()가 Decimal을 직렬화 못 해 resume 응답 저장이 통째로 실패하던 버그를 여기서
+    막는다(발생 지점이 아니라 DB 결과가 state에 들어가는 원천에서 한 번만 정리)."""
+    if isinstance(value, Decimal):
+        return float(value)
+    return value
+
+
 def _execute(domain: DomainConfig, sql: str, max_rows: int) -> tuple[list[str], list[dict]]:
     conn = get_domain_connection(domain.connection)
     try:
@@ -119,7 +129,7 @@ def _execute(domain: DomainConfig, sql: str, max_rows: int) -> tuple[list[str], 
                 if pgcode == "57014":  # query_canceled — statement_timeout 초과
                     raise TimeoutError(f"쿼리 타임아웃 (30s 초과): {e}") from e
                 raise
-            rows = [dict(r) for r in cur.fetchall()]
+            rows = [{k: _json_safe(v) for k, v in dict(r).items()} for r in cur.fetchall()]
             columns = [desc[0] for desc in cur.description] if cur.description else []
     finally:
         conn.close()

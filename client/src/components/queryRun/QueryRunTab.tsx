@@ -1,40 +1,38 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { domainApi } from '../../api/domainClient'
 import { runsApi } from '../../api/runsClient'
-import type { ReviewConfig } from '../../types'
+import type { LogLine, ReviewConfig, RunResult } from '../../types'
 import { ExecutionLogPanel } from './ExecutionLogPanel'
-import { FailedCard } from './FailedCard'
-import { ResultCard } from './ResultCard'
-import { RunningWorkCard } from './RunningWorkCard'
-import { SchemaReviewCard } from './SchemaReviewCard'
-import { SqlReviewCard } from './SqlReviewCard'
-import { StageRail } from './StageRail'
-import { StageSnapshotCard } from './StageSnapshotCard'
+import { TurnCard } from './TurnCard'
 import { useRunReview } from './useRunReview'
-import { RUNNING_STAGE_NO, type Phase, type RunningPhase } from './stages'
+import type { Phase } from './stages'
 
-function statusLabel(phase: Phase): string {
-  if (phase.startsWith('running_')) return `진행 중 · ${RUNNING_STAGE_NO[phase as RunningPhase]}단계부터`
-  if (phase === 'schema_review' || phase === 'sql_review') return '검토 대기'
-  if (phase === 'done') return '완료'
-  if (phase === 'failed') return '실패'
-  return '대기'
-}
+const DEFAULT_QUESTION = '2023년 이후 로봇 수술을 받은 전립선암 환자 수를 Gleason 위험군별로 알려줘'
 
 export function QueryRunTab() {
   const [domainName, setDomainName] = useState<string | null>(null)
   const [pendingCfg, setPendingCfg] = useState<ReviewConfig>({ schema: false, sql: false })
-  const [question, setQuestion] = useState(
-    '2023년 이후 로봇 수술을 받은 전립선암 환자 수를 Gleason 위험군별로 알려줘',
-  )
+  const [question, setQuestion] = useState(DEFAULT_QUESTION)
   const [submitError, setSubmitError] = useState<string | null>(null)
+
+  // 대화(스레드) 상태 — 완료된 과거 턴은 turns에 얼려두고, 지금 진행 중이거나 검토 대기인
+  // "라이브" 턴 하나만 useRunReview가 담당한다. conversationId가 없으면 아직 이 화면에서
+  // 한 번도 실행하지 않은 새 대화다.
+  const [conversationId, setConversationId] = useState<string | null>(null)
+  const [turns, setTurns] = useState<RunResult[]>([])
+  const [collapsedOverride, setCollapsedOverride] = useState<Record<number, boolean>>({})
+  const [carryContext, setCarryContext] = useState(true)
+  const [liveQuestion, setLiveQuestion] = useState('')
+
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const {
     phase, result, error, cfg,
     schemaChecked, columnChecked, sqlDraft, setSqlDraft, sqlDraftEdited, correctionReason, setCorrectionReason,
     toggleSchemaCandidate, toggleColumn,
     goToPhase, loadResult, approveSchema, approveSql, reset,
-    stages, isRunning, viewedStageNo, reachedIdx, showSnapshot, onSelectStage,
+    isRunning,
   } = useRunReview(pendingCfg)
 
   useEffect(() => {
@@ -44,147 +42,223 @@ export function QueryRunTab() {
       .catch(() => setDomainName(null))
   }, [])
 
+  const hasLiveTurn = phase !== 'idle'
+  const liveTurnNo = result?.turn_no ?? turns.length + 1
+  const totalTurns = turns.length + (hasLiveTurn ? 1 : 0)
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+    }
+  }, [totalTurns, phase])
+
   const runQuery = async () => {
+    const q = question.trim()
+    if (!q) return
     setSubmitError(null)
+    // 직전 턴이 이미 끝나 있었으면(성공/실패) 대화 목록에 얼려 넣고 새 라이브 턴을 시작한다.
+    if (result) {
+      setTurns((prev) => [...prev, result])
+    }
+    setLiveQuestion(q)
+    setQuestion('')
     reset()
     goToPhase('running_create')
     try {
-      const r = await runsApi.create(question, domainName ?? undefined, pendingCfg)
+      const r = await runsApi.create(
+        q,
+        domainName ?? undefined,
+        pendingCfg,
+        conversationId ?? undefined,
+        !!conversationId && carryContext,
+      )
+      if (!conversationId) setConversationId(r.conversation_id)
       loadResult(r)
     } catch (e) {
       goToPhase('idle')
       setSubmitError(e instanceof Error ? e.message : '실행 요청 실패')
+      setQuestion(q)
     }
   }
 
-  const restart = () => {
+  // 지금 진행 중인 턴만 초기화한다 — 대화(conversationId·과거 턴)는 그대로 남아 있어서
+  // 실패한 질문을 고쳐 같은 대화 안에서 다시 보낼 수 있다.
+  const retryLiveTurn = () => {
     reset()
     setSubmitError(null)
+  }
+
+  const newConversation = () => {
+    reset()
+    setSubmitError(null)
+    setTurns([])
+    setConversationId(null)
+    setCollapsedOverride({})
+    setCarryContext(true)
+    setLiveQuestion('')
+    setQuestion(DEFAULT_QUESTION)
   }
 
   const onToggleGate = (key: 'schema' | 'sql') => {
     setPendingCfg((c) => ({ ...c, [key]: !c[key] }))
   }
 
+  const isCollapsed = (turnNo: number, defaultCollapsed: boolean) =>
+    collapsedOverride[turnNo] ?? defaultCollapsed
+  const toggleCollapsed = (turnNo: number, defaultCollapsed: boolean) =>
+    setCollapsedOverride((prev) => ({ ...prev, [turnNo]: !isCollapsed(turnNo, defaultCollapsed) }))
+
+  const blocked = isRunning || phase === 'schema_review' || phase === 'sql_review'
+  const blockedLabel = isRunning
+    ? `턴 ${liveTurnNo}이 실행 중입니다. 완료 후 다음 질문을 보낼 수 있습니다.`
+    : `턴 ${liveTurnNo}이 검토 대기 중입니다. 승인 또는 취소 후 다음 질문을 보낼 수 있습니다.`
+  const placeholder = blocked
+    ? '검토를 완료해야 다음 질문을 할 수 있습니다'
+    : conversationId
+      ? '이어서 질문하세요 — 이전 턴의 결과와 스키마를 컨텍스트로 사용합니다'
+      : `예: ${DEFAULT_QUESTION}`
+
+  const allLogs: LogLine[] = [
+    ...turns.flatMap((t) => t.logs.map((l) => ({ ...l, turn: t.turn_no }))),
+    ...(result ? result.logs.map((l) => ({ ...l, turn: result.turn_no })) : []),
+  ]
+
   return (
-    <>
+    <div className="query-run-shell">
       <header className="page-header">
         <h1>질의 실행</h1>
-        <p className="subtitle">자연어 질문을 SQL로 변환해 실행합니다.</p>
+        <span className="badge-multiturn">멀티턴</span>
+        <span className="thread-meta">
+          thread {conversationId ? conversationId.slice(0, 8) : '—'} · {totalTurns} turns
+        </span>
         <div className="header-spacer" />
+        <button
+          className="btn-secondary"
+          onClick={newConversation}
+          disabled={!conversationId && totalTurns === 0}
+        >
+          새 대화
+        </button>
         <span className="header-domain-label">domain</span>
         <span className="header-domain-value">{domainName ?? '—'}</span>
       </header>
 
-      <div className="content">
-        <section className="run-input-card">
-          <div className="run-input-row">
-            <textarea
-              className="run-question-input"
-              value={question}
-              onChange={(e) => setQuestion(e.target.value)}
-              rows={2}
-              placeholder="예: 2023년 이후 로봇 수술을 받은 전립선암 환자 수를 Gleason 위험군별로 알려줘"
+      <div className="turn-list-scroll" ref={scrollRef}>
+        {totalTurns === 0 && (
+          <p className="turn-empty-placeholder">질문을 입력하면 대화가 여기에 시작됩니다.</p>
+        )}
+
+        {turns.map((t) => {
+          const frozenPhase: Phase = t.status === 'success' ? 'done' : 'failed'
+          const collapsed = isCollapsed(t.turn_no, true)
+          return (
+            <TurnCard
+              key={t.run_id}
+              turnNo={t.turn_no}
+              question={t.question}
+              result={t}
+              phase={frozenPhase}
+              cfg={t.review_config}
+              isLive={false}
+              collapsed={collapsed}
+              onToggleCollapse={() => toggleCollapsed(t.turn_no, true)}
             />
-            <button
-              className="btn-primary run-button"
-              onClick={runQuery}
-              disabled={isRunning || !question.trim()}
-            >
-              실행
-            </button>
-          </div>
-        </section>
+          )
+        })}
+
+        {hasLiveTurn && (
+          <TurnCard
+            key={result?.run_id ?? 'live'}
+            turnNo={liveTurnNo}
+            question={result?.question ?? liveQuestion}
+            result={result}
+            phase={phase}
+            cfg={cfg}
+            isLive
+            collapsed={isCollapsed(liveTurnNo, false)}
+            onToggleCollapse={() => toggleCollapsed(liveTurnNo, false)}
+            live={{
+              schemaChecked,
+              columnChecked,
+              onToggleSchemaCandidate: toggleSchemaCandidate,
+              onToggleColumn: toggleColumn,
+              onCancelSchema: retryLiveTurn,
+              onApproveSchema: approveSchema,
+              sqlDraft,
+              setSqlDraft,
+              sqlDraftEdited,
+              correctionReason,
+              setCorrectionReason,
+              onApproveSql: approveSql,
+              onRestartFailed: retryLiveTurn,
+            }}
+            onFollowUp={phase === 'done' ? () => textareaRef.current?.focus() : undefined}
+          />
+        )}
+      </div>
+
+      <div className="composer-footer">
+        <ExecutionLogPanel logs={allLogs} isRunning={isRunning} countSuffix={totalTurns > 1 ? ` · ${totalTurns} turns` : ''} />
 
         {(submitError || error) && <div className="run-error-banner">{submitError ?? error}</div>}
 
-        <ExecutionLogPanel logs={result?.logs ?? []} isRunning={isRunning} />
-
-        <section className="progress-card">
-          <div className="progress-head">
-            <h2>진행 상태</h2>
-            <span className={`run-status-badge status-${isRunning ? 'fetching' : phase}`}>
-              {statusLabel(phase)}
-            </span>
-            {result && result.retries > 0 && (
-              <span className="retry-badge">
-                검증 재시도 {result.retries}/{result.max_retries}
-              </span>
-            )}
-            <div className="header-spacer" />
-            <span className="review-config-label">
-              review_config {`{ schema: ${cfg.schema}, sql: ${cfg.sql} }`}
-            </span>
+        {blocked && (
+          <div className="composer-blocked-banner">
+            <span className="composer-blocked-mark">!</span>
+            <span className="composer-blocked-text">{blockedLabel}</span>
           </div>
-
-          {result && (
-            <div className="intent-summary-row">
-              <span className="review-section-label">1단계 결과 · INTENT</span>
-              {result.difficulty && <span className="pill pill-difficulty">난이도 {result.difficulty}</span>}
-              {result.task_type && <span className="pill">{result.task_type}</span>}
-            </div>
-          )}
-
-          <StageRail
-            stages={stages}
-            cfg={cfg}
-            onToggleGate={onToggleGate}
-            selectedNo={viewedStageNo}
-            onSelect={onSelectStage}
-          />
-
-          {result && result.retries > 0 && (
-            <div className="retry-note">
-              ↺ 검증/생성 재시도 {result.retries}회 발생 — 최종적으로{' '}
-              {result.status === 'success' ? '통과했습니다.' : '실패했습니다.'}
-            </div>
-          )}
-        </section>
-
-        {showSnapshot && viewedStageNo && result && (
-          <StageSnapshotCard
-            stageNo={viewedStageNo}
-            reachedIdx={reachedIdx}
-            result={result}
-            question={question}
-            cfg={cfg}
-          />
         )}
 
-        {!showSnapshot && isRunning && <RunningWorkCard phase={phase as RunningPhase} />}
-
-        {!showSnapshot && phase === 'schema_review' && result && (
-          <SchemaReviewCard
-            candidates={result.schema_candidate_details}
-            checked={schemaChecked}
-            onToggle={toggleSchemaCandidate}
-            columnChecked={columnChecked}
-            onToggleColumn={toggleColumn}
-            onCancel={restart}
-            onApprove={approveSchema}
+        <div className="composer-input-row">
+          <textarea
+            ref={textareaRef}
+            className="run-question-input"
+            value={question}
+            onChange={(e) => setQuestion(e.target.value)}
+            rows={2}
+            disabled={blocked}
+            placeholder={placeholder}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault()
+                runQuery()
+              }
+            }}
           />
-        )}
+          <button
+            className="btn-primary run-button"
+            onClick={runQuery}
+            disabled={blocked || !question.trim()}
+          >
+            전송
+          </button>
+        </div>
 
-        {!showSnapshot && phase === 'sql_review' && result && (
-          <SqlReviewCard
-            sql={sqlDraft}
-            onChange={setSqlDraft}
-            retries={result.retries}
-            runId={result.run_id}
-            refTables={result.confirmed_schema}
-            retryErrorCode={result.retry_error_code}
-            retryFeedback={result.retry_feedback}
-            edited={sqlDraftEdited}
-            correctionReason={correctionReason}
-            onCorrectionReasonChange={setCorrectionReason}
-            onApprove={approveSql}
-          />
-        )}
-
-        {!showSnapshot && phase === 'done' && result && <ResultCard result={result} />}
-
-        {!showSnapshot && phase === 'failed' && result && <FailedCard result={result} onRestart={restart} />}
+        <div className="composer-config-row">
+          <span className="composer-config-label">다음 질문에 적용</span>
+          <label className="composer-checkbox">
+            <input type="checkbox" checked={pendingCfg.schema} onChange={() => onToggleGate('schema')} />
+            <span>스키마 검토</span>
+          </label>
+          <label className="composer-checkbox">
+            <input type="checkbox" checked={pendingCfg.sql} onChange={() => onToggleGate('sql')} />
+            <span>SQL 검토</span>
+          </label>
+          <label className={`composer-checkbox ${conversationId ? '' : 'disabled'}`}>
+            <input
+              type="checkbox"
+              checked={carryContext}
+              disabled={!conversationId}
+              onChange={() => setCarryContext((v) => !v)}
+            />
+            <span>이전 턴 스키마 재사용</span>
+          </label>
+          <div className="header-spacer" />
+          <span className="composer-thread-label">
+            POST /runs · thread_id {conversationId ? conversationId.slice(0, 8) : '—'}
+          </span>
+        </div>
       </div>
-    </>
+    </div>
   )
 }

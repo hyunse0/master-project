@@ -32,6 +32,9 @@ export interface LogLine {
   ts: string
   level: 'info' | 'warn' | 'error'
   msg: string
+  // 멀티턴 실행 로그 패널에서 여러 턴의 로그를 한 줄로 합쳐 보여줄 때만 채워 넣는다 —
+  // 서버 응답에는 없고 클라이언트가 턴별로 합칠 때 덧붙이는 표시용 필드.
+  turn?: number
 }
 
 export interface RunResult {
@@ -40,6 +43,10 @@ export interface RunResult {
   domain: string
   question: string
   review_config: ReviewConfig
+  // 멀티턴 스레드 식별자 — 없으면(=null) 이 run 하나짜리 단발 대화다.
+  conversation_id: string | null
+  turn_no: number
+  parent_run_id: string | null
   difficulty: 'easy' | 'medium' | 'hard' | null
   query_type: 'aggregate' | 'list' | 'cohort' | null
   task_type: string | null
@@ -48,6 +55,9 @@ export interface RunResult {
   confirmed_schema: string[]
   confirmed_columns: Record<string, string[]>
   sql: string | null
+  // 노드별로 실제 호출된 모델 배포명 — 난이도 라우팅이 실제로 어느 모델로 갔는지 화면에서
+  // 바로 보여주기 위한 것. 옛 run 응답(재조회 캐시 등)에는 없을 수 있어 optional.
+  node_models?: Record<string, string>
   columns: string[]
   rows: Record<string, unknown>[]
   row_count: number | null

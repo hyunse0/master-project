@@ -18,6 +18,11 @@ export interface DifficultyModelGroup extends CostAggregate {
   model: string
 }
 
+export interface NodeModelGroup extends CostAggregate {
+  node: string
+  model: string
+}
+
 export interface CostSummary<G> {
   group_by: string
   domain: string | null
@@ -86,6 +91,11 @@ export const costApi = {
   difficultySummary: (params: { domain?: string; since?: string } = {}) =>
     getJSON<CostSummary<DifficultyModelGroup>>(
       `/cost/summary${buildQuery({ group_by: 'difficulty', ...params })}`,
+    ),
+
+  nodeSummary: (params: { domain?: string; since?: string } = {}) =>
+    getJSON<CostSummary<NodeModelGroup>>(
+      `/cost/summary${buildQuery({ group_by: 'node', ...params })}`,
     ),
 
   recentRuns: (params: { domain?: string; limit?: number } = {}) =>

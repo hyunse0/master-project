@@ -4,10 +4,12 @@ import {
   costApi,
   type CostAggregate,
   type DifficultyModelGroup,
+  type NodeModelGroup,
   type RecentRun,
   type RunCostDetail,
   type SchemaRagModeGroup,
 } from '../../api/costClient'
+import { modelConfigApi, type ModelConfigCurrent, type ModelConfigResponse } from '../../api/modelConfigClient'
 
 type Period = 'today' | '7d' | 'all'
 
@@ -24,6 +26,22 @@ const ABLATION_META: Record<string, { tag: string; tagClass: string; label: stri
   full_dump: { tag: 'BEFORE', tagClass: 'before', label: '전체 스키마 덤프' },
   rag: { tag: 'AFTER', tagClass: 'after', label: 'Qdrant 스키마 검색' },
 }
+
+// DB(model_config)에 값이 없으면 서버가 .env 기본값으로 폴백하는데, 드롭다운이 빈 채로
+// 보이지 않도록 같은 기본값을 표시용으로만 미러링한다 — 실제 폴백 판단은 서버가 한다.
+const ENV_DEFAULTS: Record<keyof ModelConfigCurrent, string> = {
+  chat_low: 'gpt-4.1-mini',
+  chat_high: 'gpt-5',
+  chat_judge: 'gpt-4o-mini',
+  embedding: 'text-embedding-3-small',
+}
+
+const MODEL_ROLES: { key: keyof ModelConfigCurrent; label: string; hint: string; kind: 'chat' | 'embedding' }[] = [
+  { key: 'chat_low', label: 'LOW', hint: 'easy/medium 난이도 SQL 생성', kind: 'chat' },
+  { key: 'chat_high', label: 'HIGH', hint: 'hard 난이도 SQL 생성', kind: 'chat' },
+  { key: 'chat_judge', label: 'JUDGE', hint: '골든셋 평가 채점(생성 모델과 분리 권장)', kind: 'chat' },
+  { key: 'embedding', label: '임베딩', hint: '스키마/few-shot 검색 — 변경 시 재색인 필요', kind: 'embedding' },
+]
 
 function periodToSince(period: Period): string | undefined {
   if (period === 'all') return undefined
@@ -49,7 +67,14 @@ export function CostDashboard({ onOpenRunInHistory }: Props) {
   const [kpi, setKpi] = useState<CostAggregate | null>(null)
   const [ablationGroups, setAblationGroups] = useState<SchemaRagModeGroup[]>([])
   const [routingGroups, setRoutingGroups] = useState<DifficultyModelGroup[]>([])
+  const [judgeGroups, setJudgeGroups] = useState<NodeModelGroup[]>([])
   const [recentRuns, setRecentRuns] = useState<RecentRun[]>([])
+
+  const [modelConfig, setModelConfig] = useState<ModelConfigResponse | null>(null)
+  const [modelDraft, setModelDraft] = useState<Partial<ModelConfigCurrent>>({})
+  const [modelSaving, setModelSaving] = useState(false)
+  const [modelJustSaved, setModelJustSaved] = useState(false)
+  const [modelSaveError, setModelSaveError] = useState<string | null>(null)
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -73,15 +98,19 @@ export function CostDashboard({ onOpenRunInHistory }: Props) {
           // 스트립·최근 실행 이력과는 성격이 다르다.
           costApi.schemaRagSummary({}),
           costApi.difficultySummary({}),
+          costApi.nodeSummary({}),
           costApi.recentRuns({ domain: domainName ?? undefined, limit: 5 }),
           costApi.schemaRagSummary({ domain: domainName ?? undefined }),
+          modelConfigApi.get(),
         ])
       })
-      .then(([ablation, routing, recent, kpiScoped]) => {
+      .then(([ablation, routing, nodes, recent, kpiScoped, models]) => {
         setAblationGroups(ablation.groups)
         setRoutingGroups(routing.groups)
+        setJudgeGroups(nodes.groups.filter((g) => g.node.includes('judge')))
         setRecentRuns(recent.runs)
         setKpi(kpiScoped.overall)
+        setModelConfig(models)
         setPeriod('all')
       })
       .catch((e) => setError(e instanceof Error ? e.message : '비용 집계 조회 실패'))
@@ -134,6 +163,46 @@ export function CostDashboard({ onOpenRunInHistory }: Props) {
   const sortedRouting = [...routingGroups]
     .filter((g) => g.difficulty)
     .sort((a, b) => (DIFF_ORDER[a.difficulty!] ?? 9) - (DIFF_ORDER[b.difficulty!] ?? 9))
+
+  const modelCurrent = (key: keyof ModelConfigCurrent): string =>
+    modelConfig?.current[key] ?? ENV_DEFAULTS[key]
+
+  const modelRoleRows = MODEL_ROLES.map(({ key, label, hint, kind }) => {
+    const options = kind === 'chat' ? modelConfig?.options.chat ?? [] : modelConfig?.options.embedding ?? []
+    const saved = modelCurrent(key)
+    const value = modelDraft[key] ?? saved
+    return { key, label, hint, options, value, dirty: value !== saved }
+  })
+  const dirtyRoles = modelRoleRows.filter((r) => r.dirty)
+  const modelDirty = dirtyRoles.length > 0
+
+  const changeModelDraft = (key: keyof ModelConfigCurrent, value: string) => {
+    setModelDraft((d) => ({ ...d, [key]: value }))
+    setModelJustSaved(false)
+    setModelSaveError(null)
+  }
+
+  const resetModelDraft = () => {
+    setModelDraft({})
+    setModelJustSaved(false)
+    setModelSaveError(null)
+  }
+
+  const saveModelDraft = () => {
+    if (!modelDirty) return
+    setModelSaving(true)
+    setModelSaveError(null)
+    const body = Object.fromEntries(dirtyRoles.map((r) => [r.key, r.value]))
+    modelConfigApi
+      .update(body)
+      .then((res) => {
+        setModelConfig(res)
+        setModelDraft({})
+        setModelJustSaved(true)
+      })
+      .catch((e) => setModelSaveError(e instanceof Error ? e.message : '저장 실패'))
+      .finally(() => setModelSaving(false))
+  }
 
   return (
     <>
@@ -303,6 +372,74 @@ export function CostDashboard({ onOpenRunInHistory }: Props) {
               )}
             </section>
 
+            {/* Zone B.5 — 모델 설정 */}
+            <section className="panel">
+              <div className="panel-head">
+                <h2>모델 설정</h2>
+                <span style={{ fontSize: 11.5, color: 'var(--ink-soft)', fontWeight: 400 }}>
+                  역할별로 게이트웨이 배포를 직접 선택합니다. 저장 즉시 다음 실행부터 반영됩니다(재시작 불필요)
+                </span>
+                <span className="panel-endpoint">PUT /model-config</span>
+              </div>
+
+              <div className="cost-model-grid">
+                {modelRoleRows.map((r) => (
+                  <div className="cost-model-role" key={r.key}>
+                    <div className="cost-model-role-head">
+                      <span className="cost-model-role-key">{r.label}</span>
+                      {r.dirty && <span className="cost-model-dirty-badge">변경</span>}
+                    </div>
+                    <span className="cost-model-role-desc">{r.hint}</span>
+                    <select
+                      className={`cost-model-select ${r.dirty ? 'dirty' : ''}`}
+                      value={r.value}
+                      onChange={(e) => changeModelDraft(r.key, e.target.value)}
+                    >
+                      {r.options.map((opt) => (
+                        <option key={opt} value={opt}>
+                          {opt}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ))}
+              </div>
+
+              {dirtyRoles.some((r) => r.key === 'embedding') && (
+                <div className="retry-note" style={{ margin: '0 20px 16px' }}>
+                  임베딩 모델을 바꾸면 기존 벡터와 차원이 맞지 않을 수 있습니다. 저장 후 스키마·few-shot
+                  재색인(schema_indexer.py, seed_few_shot.py)이 필요합니다.
+                </div>
+              )}
+
+              <div className="cost-model-footer">
+                <span
+                  className={`cost-model-note ${
+                    modelSaveError ? 'dirty' : modelDirty ? 'dirty' : modelJustSaved ? 'saved' : 'clean'
+                  }`}
+                >
+                  {modelSaveError
+                    ? modelSaveError
+                    : modelSaving
+                      ? '저장 중…'
+                      : modelDirty
+                        ? `${dirtyRoles.length}개 역할이 변경되었습니다 — 저장 전`
+                        : modelJustSaved
+                          ? '저장됨 · 다음 실행부터 적용됩니다'
+                          : '모든 역할이 저장된 설정과 동일합니다'}
+                </span>
+                <div style={{ flex: 1 }} />
+                {modelDirty && (
+                  <button className="btn-secondary" onClick={resetModelDraft} disabled={modelSaving}>
+                    되돌리기
+                  </button>
+                )}
+                <button className="btn-primary" onClick={saveModelDraft} disabled={!modelDirty || modelSaving}>
+                  {modelDirty ? '저장' : '저장됨'}
+                </button>
+              </div>
+            </section>
+
             {/* Zone C — 난이도별 모델 분기 현황 */}
             <section className="panel">
               <div className="panel-head">
@@ -326,6 +463,38 @@ export function CostDashboard({ onOpenRunInHistory }: Props) {
                   {sortedRouting.map((g, i) => (
                     <div className="cost-routing-row" key={i}>
                       <span className={`cost-diff-pill ${g.difficulty}`}>{DIFF_LABEL[g.difficulty!] ?? g.difficulty}</span>
+                      <span className="cost-model-cell">{g.model}</span>
+                      <span className="cost-num-cell">{fmt(g.call_count)}</span>
+                      <span className="cost-num-cell strong">{fmt(g.total_tokens)}</span>
+                    </div>
+                  ))}
+                </>
+              )}
+            </section>
+
+            {/* Zone C.5 — 평가(Judge) 모델 사용량 */}
+            <section className="panel">
+              <div className="panel-head">
+                <h2>평가(Judge) 모델 사용량</h2>
+                <span style={{ fontSize: 11.5, color: 'var(--ink-soft)', fontWeight: 400 }}>
+                  golden set 평가가 채점에 쓰는 모델 — SQL 생성 모델(LOW/HIGH)과 달라야 자기평가 편향이 없다
+                </span>
+                <span className="panel-endpoint">group_by=node</span>
+              </div>
+
+              {judgeGroups.length === 0 ? (
+                <div className="panel-empty">아직 평가 실행 기록이 없습니다.</div>
+              ) : (
+                <>
+                  <div className="cost-routing-head">
+                    <span>노드</span>
+                    <span>채점 모델</span>
+                    <span>호출 수</span>
+                    <span>총 토큰</span>
+                  </div>
+                  {judgeGroups.map((g, i) => (
+                    <div className="cost-routing-row" key={i}>
+                      <span className="cost-model-cell">{g.node}</span>
                       <span className="cost-model-cell">{g.model}</span>
                       <span className="cost-num-cell">{fmt(g.call_count)}</span>
                       <span className="cost-num-cell strong">{fmt(g.total_tokens)}</span>

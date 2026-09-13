@@ -62,6 +62,11 @@ WHERE절에 리터럴 값을 쓸 때 — 아래 조건을 모두 충족해야 �
 
 # 에러 코드별 재시도 지침
 _RETRY_GUIDE: dict[str, str] = {
+    "JOIN_INVALID": (
+        "일부 테이블이 다른 테이블과 JOIN 조건 없이 나열되어 카티션 곱 위험이 있습니다.\n"
+        "모든 테이블을 JOIN ... ON 조건이나 WHERE 등가조건으로 다른 테이블과 명시적으로 연결하세요.\n"
+        "의도적인 전체 조합이 아니라면 조건 없는 콤마 조인이나 CROSS JOIN을 쓰지 마세요."
+    ),
     "UNSAFE_SQL": (
         "단일 SELECT/허용 함수만 사용했는지 점검 후 재작성하세요.\n"
         "PostgreSQL 미지원 문법(QUALIFY/ROWNUM/SYSDATE/NVL/DATE_FORMAT)이 있으면 제거하세요.\n"
@@ -108,6 +113,7 @@ class SqlPromptBuilder:
         dimensions:  list[str]   | None = None,
         time_range:  dict        | None = None,
         type_guidance: str | None = None,
+        prior_turn_context: str | None = None,
     ) -> str:
         parts = [_SYSTEM_PROMPT]
 
@@ -151,6 +157,14 @@ class SqlPromptBuilder:
                 retry_block += f"\n{guide}"
             retry_block += f"\n\n오류 내용:\n{feedback}"
             parts.append(retry_block)
+
+        if prior_turn_context:
+            parts.append(
+                "\n\n[이전 턴 — 지금 질문이 여기 이어지는 후속 질문일 수 있습니다]\n"
+                f"{prior_turn_context}\n"
+                "위 이전 턴의 필터/조인 조건 중 지금 질문에서 부정되지 않은 부분은 그대로 유지하고,"
+                " 지금 질문이 요구하는 부분만 바꿔서 SQL을 작성하세요."
+            )
 
         parts.append(f"\n\n[질문]\n{question}\n\n[출력]")
         return "".join(parts)

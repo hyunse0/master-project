@@ -14,6 +14,10 @@ _GROUP_BY_CONFIGS = {
     "schema_rag_mode": {"columns": ["tags->>'schema_rag_mode' AS schema_rag_mode"], "group_by": "tags->>'schema_rag_mode'"},
     "difficulty": {"columns": ["tags->>'difficulty' AS difficulty", "model"], "group_by": "tags->>'difficulty', model"},
     "model": {"columns": ["model"], "group_by": "model"},
+    # judge(LLM-as-a-judge) 등 평가 전용 노드가 생성 모델과 분리됐는지 비용 대시보드에서
+    # 바로 확인하기 위한 축 — eval 스크립트가 남긴 토큰 사용량(node="faithfulness_judge" 등)도
+    # runs 테이블 등록 여부와 무관하게 token_usage에서 직접 집계되므로 함께 잡힌다.
+    "node": {"columns": ["node", "model"], "group_by": "node, model"},
 }
 
 

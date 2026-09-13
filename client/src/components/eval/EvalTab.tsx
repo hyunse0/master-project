@@ -23,6 +23,7 @@ const OUTCOME_META: Record<string, { label: string; color: string }> = {
 
 // execution.py/validation.py/sql_generation이 실제로 내보내는 retry_error_code 값 전부.
 const ERROR_CODE_LABEL: Record<string, string> = {
+  JOIN_INVALID: '조인 정합성 오류',
   SCHEMA_CITATION_FAIL: '스키마 인용 오류',
   VALUE_ANCHOR_FAIL: '값 매칭 오류',
   SQL_VALIDATION_FAIL: 'SQL 검증 오류',

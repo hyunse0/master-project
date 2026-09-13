@@ -9,10 +9,11 @@ interface Props {
  * 또는 이후 실행 단계에서 실패) 셋 다 통과가 맞다 — 지어내는 게 아니라 실제로 그렇다. */
 export function ValidateChecklist({ result }: Props) {
   const failedHere = result.retry_error_code
-    ? ['SCHEMA_CITATION_FAIL', 'VALUE_ANCHOR_FAIL', 'SQL_VALIDATION_FAIL'].includes(result.retry_error_code)
+    ? ['JOIN_INVALID', 'SCHEMA_CITATION_FAIL', 'VALUE_ANCHOR_FAIL', 'SQL_VALIDATION_FAIL'].includes(result.retry_error_code)
     : false
 
   const items = [
+    { name: '조인 정합성 검증', code: 'JOIN_INVALID' },
     { name: '스키마 인용 검증', code: 'SCHEMA_CITATION_FAIL' },
     { name: '값 존재 검증', code: 'VALUE_ANCHOR_FAIL' },
     { name: '안전성 검증', code: 'SQL_VALIDATION_FAIL' },

@@ -27,7 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.domain.loader import get_domain  # noqa: E402
 from app.graph.build import build_graph  # noqa: E402
 from app.llm.base import TokenCountingLLM  # noqa: E402
-from app.llm.router import build_llm_router  # noqa: E402
+from app.llm.router import build_judge_llm  # noqa: E402
 from app.observability import run_logger  # noqa: E402
 
 _JUDGE_PROMPT = """\
@@ -103,9 +103,9 @@ def main() -> None:
         queries = queries[: args.limit]
 
     graph = build_graph(domain)
-    # 판정 자체도 비용이 드는 LLM 호출이라 저비용 티어를 쓴다 — app/llm/router.py의
-    # 난이도별 티어 매핑 중 "easy"가 가리키는 저비용 클라이언트를 그대로 재사용.
-    judge_llm = build_llm_router()["easy"]
+    # 판정은 SQL을 생성한 모델과 같은 모델이 채점하면 후해지는 문제가 있어(같은 LLM의
+    # 자기평가 편향), 생성 티어(LOW/HIGH)와 분리된 judge 전용 모델을 쓴다.
+    judge_llm = build_judge_llm()
 
     total = faithful_count = 0
     failures: list[dict] = []

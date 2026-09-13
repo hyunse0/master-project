@@ -13,16 +13,41 @@ from app.db.app_db import get_app_db_connection
 logger = logging.getLogger(__name__)
 
 
-def create(run_id: str, domain: str, question: str, review_config: dict) -> None:
+def create_conversation(domain: str) -> str:
+    """새 대화(멀티턴 스레드)를 하나 발급한다 — "새 대화" 버튼 클릭 시 또는 conversation_id
+    없이 POST /runs가 들어왔을 때(=대화의 첫 턴) 호출된다."""
+    conn = get_app_db_connection()
+    try:
+        with conn, conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO conversations (domain) VALUES (%s) RETURNING conversation_id",
+                (domain,),
+            )
+            return str(cur.fetchone()[0])
+    finally:
+        conn.close()
+
+
+def create(
+    run_id: str,
+    domain: str,
+    question: str,
+    review_config: dict,
+    *,
+    conversation_id: str | None = None,
+    turn_no: int = 1,
+    parent_run_id: str | None = None,
+) -> None:
     conn = get_app_db_connection()
     try:
         with conn, conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO runs (run_id, domain, question, review_config, status)
-                VALUES (%s, %s, %s, %s::jsonb, 'running')
+                INSERT INTO runs (run_id, domain, question, review_config, status,
+                                   conversation_id, turn_no, parent_run_id)
+                VALUES (%s, %s, %s, %s::jsonb, 'running', %s, %s, %s)
                 """,
-                (run_id, domain, question, json.dumps(review_config)),
+                (run_id, domain, question, json.dumps(review_config), conversation_id, turn_no, parent_run_id),
             )
     finally:
         conn.close()
@@ -48,7 +73,11 @@ def get(run_id: str) -> dict | None:
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT status, domain, question, review_config, state_snapshot FROM runs WHERE run_id = %s",
+                """
+                SELECT status, domain, question, review_config, state_snapshot,
+                       conversation_id, turn_no, parent_run_id
+                FROM runs WHERE run_id = %s
+                """,
                 (run_id,),
             )
             row = cur.fetchone()
@@ -57,14 +86,84 @@ def get(run_id: str) -> dict | None:
 
     if row is None:
         return None
-    status, domain, question, review_config, state_snapshot = row
+    status, domain, question, review_config, state_snapshot, conversation_id, turn_no, parent_run_id = row
     return {
         "status": status,
         "domain": domain,
         "question": question,
         "review_config": review_config,
         "state_snapshot": state_snapshot,
+        "conversation_id": str(conversation_id) if conversation_id else None,
+        "turn_no": turn_no,
+        "parent_run_id": str(parent_run_id) if parent_run_id else None,
     }
+
+
+def get_last_turn(conversation_id: str) -> dict | None:
+    """대화의 가장 최근 턴(run) 하나를 turn_no 기준으로 가져온다 — 다음 턴을 만들 때
+    prior_turns(직전 턴 컨텍스트)를 구성하는 데 쓰인다. 진행 중/검토 대기 중인 턴은
+    아직 이어받을 확정 결과가 없으므로 호출부가 status를 보고 판단한다."""
+    conn = get_app_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT run_id, status, question, review_config, state_snapshot, turn_no
+                FROM runs
+                WHERE conversation_id = %s
+                ORDER BY turn_no DESC
+                LIMIT 1
+                """,
+                (conversation_id,),
+            )
+            row = cur.fetchone()
+    finally:
+        conn.close()
+
+    if row is None:
+        return None
+    run_id, status, question, review_config, state_snapshot, turn_no = row
+    return {
+        "run_id": str(run_id),
+        "status": status,
+        "question": question,
+        "review_config": review_config,
+        "state_snapshot": state_snapshot,
+        "turn_no": turn_no,
+    }
+
+
+def list_conversation_turns(conversation_id: str) -> list[dict]:
+    """대화 상세 화면(GET /conversations/{id})용 — 턴 순서대로 요약 필드만 반환한다.
+    상세는 지금처럼 GET /runs/{id}로 턴 하나씩 따로 조회한다(list_runs와 같은 설계)."""
+    conn = get_app_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT run_id, turn_no, question, status, created_at, state_snapshot
+                FROM runs
+                WHERE conversation_id = %s
+                ORDER BY turn_no ASC
+                """,
+                (conversation_id,),
+            )
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+
+    return [
+        {
+            "run_id": str(run_id),
+            "turn_no": turn_no,
+            "question": question,
+            "status": status,
+            "created_at": created_at.isoformat(),
+            "row_count": (state_snapshot or {}).get("row_count"),
+            "latency_ms": (state_snapshot or {}).get("latency_ms"),
+        }
+        for run_id, turn_no, question, status, created_at, state_snapshot in rows
+    ]
 
 
 def list_runs(
@@ -98,7 +197,8 @@ def list_runs(
         with conn.cursor() as cur:
             cur.execute(
                 f"""
-                SELECT run_id, domain, question, status, created_at, state_snapshot
+                SELECT run_id, domain, question, status, created_at, state_snapshot,
+                       conversation_id, turn_no
                 FROM runs
                 {where}
                 ORDER BY created_at DESC
@@ -122,8 +222,10 @@ def list_runs(
             "retries": (state_snapshot or {}).get("retries", 0),
             "row_count": (state_snapshot or {}).get("row_count"),
             "latency_ms": (state_snapshot or {}).get("latency_ms"),
+            "conversation_id": str(conversation_id) if conversation_id else None,
+            "turn_no": turn_no,
         }
-        for run_id, domain_, question, status_, created_at, state_snapshot in rows
+        for run_id, domain_, question, status_, created_at, state_snapshot, conversation_id, turn_no in rows
     ]
     return {"runs": runs, "has_more": has_more}
 

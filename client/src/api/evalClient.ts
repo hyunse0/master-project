@@ -69,6 +69,9 @@ export interface GoldenSetLastRun {
 export interface GoldenSetCase {
   question: string
   expected_sql: string
+  // F단계(멀티턴) — 대화 몇 번째의 몇 번째 턴인지. 화면은 아직 이 값을 쓰지 않는다.
+  conversation_index: number
+  turn_no: number
   last_run: GoldenSetLastRun | null
 }
 

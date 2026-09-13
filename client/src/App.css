@@ -493,6 +493,66 @@
 .failed-check-detail{ font-size: 11.5px; line-height: 1.5; color: var(--ink-dim); }
 .failed-card-actions{ display: flex; gap: 10px; }
 
+/* 질의 실행 탭 — 멀티턴 스레드 레이아웃 (헤더 고정 / 턴 목록 스크롤 / 하단 컴포저 고정) */
+.query-run-shell{ height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+.badge-multiturn{
+  font-size: 10px; font-weight: 500; letter-spacing: .04em; color: var(--accent-hover);
+  background: var(--accent-bg); border: 1px solid var(--review-line-strong); padding: 3px 7px; border-radius: 5px;
+}
+.thread-meta{ font-size: 11px; color: var(--ink-mute); }
+
+.turn-list-scroll{ flex: 1; min-height: 0; overflow: auto; padding: 20px 28px 24px; display: flex; flex-direction: column; gap: 12px; }
+.turn-empty-placeholder{ padding: 60px 20px; text-align: center; font-size: 12.5px; line-height: 1.6; color: var(--ink-mute); }
+
+.turn-card{ background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); }
+.turn-card.active{ border-color: var(--review-line-strong); }
+.turn-card-head{ display: flex; align-items: flex-start; gap: 12px; padding: 13px 20px; cursor: pointer; }
+.turn-card.active .turn-card-head{ background: var(--review-bg); }
+.turn-card-head:hover{ background: var(--surface-soft); }
+.turn-card.active .turn-card-head:hover{ background: var(--review-bg); }
+.turn-chip{
+  font: 600 10.5px 'JetBrains Mono', monospace; color: #7b8490; background: var(--surface-soft);
+  border: 1px solid var(--line); padding: 3px 8px; border-radius: 5px; flex-shrink: 0; margin-top: 1px;
+}
+.turn-chip.live{ color: var(--review-text); background: var(--accent-bg); border-color: var(--review-line-strong); }
+.turn-head-main{ display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 0; }
+.turn-question{ margin: 0; font: 500 12.5px 'JetBrains Mono', monospace; color: var(--ink); line-height: 1.6; text-wrap: pretty; }
+.turn-card.active .turn-question{ font-weight: 600; }
+.turn-context-hint{ font-size: 10.5px; color: #7a63d6; }
+.turn-head-side{ display: flex; align-items: center; gap: 9px; flex-shrink: 0; }
+.turn-run-id{ font-size: 10px; color: var(--ink-faint); }
+.turn-chevron{ font-size: 13px; color: var(--ink-faint); }
+
+.turn-collapsed-row{ display: flex; align-items: center; gap: 12px; padding: 11px 20px; border-top: 1px solid var(--line-soft); flex-wrap: wrap; }
+.turn-collapsed-summary{ font-size: 11.5px; line-height: 1.6; color: var(--ink-dim); flex: 1; min-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.turn-collapsed-meta{ font-size: 10.5px; color: var(--ink-faint); flex-shrink: 0; }
+
+.turn-body{ padding: 15px 20px 18px; border-top: 1px solid var(--line-soft); display: flex; flex-direction: column; gap: 15px; }
+
+.btn-follow-up{
+  align-self: flex-start; padding: 9px 15px; border: 1px solid var(--review-line-strong); background: var(--review-bg);
+  border-radius: 7px; font: 600 11.5px 'JetBrains Mono', monospace; color: var(--review-text); cursor: pointer;
+}
+.btn-follow-up:hover{ background: var(--review-line); }
+
+/* 하단 고정 컴포저 — 실행 로그 + 질문 입력 + 다음 턴 검토/컨텍스트 설정 */
+.composer-footer{ flex: none; background: var(--surface); border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 10px; padding: 14px 28px 18px; }
+.composer-blocked-banner{ display: flex; align-items: center; gap: 9px; padding: 9px 13px; border: 1px solid var(--warn-line); border-radius: 8px; background: #fffdf7; }
+.composer-blocked-mark{ font: 700 11px 'JetBrains Mono', monospace; color: var(--warn-text); flex-shrink: 0; }
+.composer-blocked-text{ font-size: 11.5px; color: var(--warn-text); }
+.composer-input-row{ display: flex; gap: 10px; align-items: flex-start; }
+.composer-config-row{ display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.composer-config-label{ font: 600 9.5px 'JetBrains Mono', monospace; letter-spacing: .1em; color: var(--ink-label); }
+.composer-checkbox{ display: flex; align-items: center; gap: 7px; cursor: pointer; }
+.composer-checkbox input{ width: 14px; height: 14px; accent-color: var(--accent); cursor: pointer; }
+.composer-checkbox span{ font-size: 11.5px; color: #4a525e; }
+.composer-checkbox.disabled{ opacity: .5; }
+.composer-checkbox.disabled input{ cursor: not-allowed; }
+.composer-thread-label{ font-size: 10.5px; color: var(--ink-faint); }
+
+.log-turn{ font: 500 10px/1.9 'JetBrains Mono', monospace; color: #7a63d6; flex-shrink: 0; width: 28px; }
+
 /* ---- 실행 히스토리 탭 ---- */
 .run-status-badge.status-running,
 .run-status-badge.status-interrupted_schema,
@@ -731,6 +791,22 @@
 }
 .cost-run-detail-row:last-child{ border-bottom: none; }
 .cost-run-detail-footer{ display: flex; align-items: center; gap: 10px; }
+
+.cost-model-grid{ display: grid; grid-template-columns: repeat(auto-fit, minmax(232px, 1fr)); gap: 16px; padding: 16px 20px 18px; }
+.cost-model-role{ display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+.cost-model-role-head{ display: flex; align-items: center; gap: 7px; }
+.cost-model-role-key{ font-size: 11px; font-weight: 600; letter-spacing: .06em; }
+.cost-model-dirty-badge{ font-size: 9px; font-weight: 500; letter-spacing: .04em; color: var(--warn-text); background: var(--warn-bg); border: 1px solid var(--warn-line); padding: 2px 5px; border-radius: 4px; }
+.cost-model-role-desc{ font-size: 10.5px; line-height: 1.5; color: var(--ink-mute); }
+.cost-model-select{ width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--line-strong); border-radius: 7px; font-size: 12px; color: var(--ink); background: var(--surface); cursor: pointer; }
+.cost-model-select.dirty{ border-color: var(--review-dot); }
+.cost-model-select:focus{ outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-bg); }
+
+.cost-model-footer{ display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 0 20px 18px; }
+.cost-model-note{ font-size: 11px; }
+.cost-model-note.dirty{ color: var(--warn-text); }
+.cost-model-note.saved{ color: var(--success-text); }
+.cost-model-note.clean{ color: var(--ink-mute); }
 
 /* ---- MCP 연동 ---- */
 .mcp-zone-body{ padding: 16px 20px 20px; display: flex; flex-direction: column; gap: 16px; }

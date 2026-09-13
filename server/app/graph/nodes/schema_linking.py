@@ -62,6 +62,37 @@ def _tier_candidates(
         )
 
 
+def _carry_over_candidates(
+    tables: list[str],
+    embedding: list[float],
+    embedder: EmbeddingEngine,
+    schema_provider: SchemaProvider,
+) -> list[dict]:
+    """멀티턴(F단계) — Qdrant 검색 없이 주어진 테이블명만으로 candidate_details를 만든다.
+    carry_schema=True 경로(전체 대체)에서 쓴다. 컬럼 티어링(key/relevant/other)은 새 질문
+    임베딩 기준으로 다시 계산한다 — 테이블은 이어받아도 "이 질문에 어떤 컬럼이 필요한지"는
+    매 턴 다를 수 있기 때문이다."""
+    candidate_details: list[dict] = []
+    for full_name in tables:
+        try:
+            schema, name = full_name.split(".", 1)
+            info = schema_provider.get_table_info(schema, name)
+        except Exception as e:
+            logger.warning("  [schema_linking] 이전 턴 테이블 %s introspection 실패 — 후보에서 제외: %s", full_name, e)
+            continue
+        candidate_details.append({
+            "table": full_name,
+            "comment": info.comment,
+            # 벡터 검색 스코어가 아니라 "직전 턴에서 이미 확정된 테이블"이라는 표시 — 검토 화면의
+            # 점수 표시 의미가 vector-search와 달라지는 지점은 화면 작업(F단계 UI) 때 반영한다.
+            "score": 1.0,
+            "columns": [c.name for c in info.columns],
+            "text": "",
+        })
+    _tier_candidates(candidate_details, embedding, embedder, schema_provider)
+    return candidate_details
+
+
 def make_schema_linking_node(
     domain: DomainConfig,
     embedder: EmbeddingEngine,
@@ -81,6 +112,25 @@ def make_schema_linking_node(
         if state.get("intent"):
             query_text = f'{state["question"]}\n의도: {state["intent"]}'
         embedding = embedder.embed(query_text)
+
+        prior_turns = state.get("prior_turns") or []
+        prior_tables = prior_turns[-1].get("confirmed_schema") or [] if prior_turns else []
+
+        if state.get("carry_schema") and prior_tables:
+            # carry_schema=True — 검색을 아예 생략하고 직전 턴 확정 테이블만 재사용.
+            candidate_details = _carry_over_candidates(prior_tables, embedding, embedder, schema_provider)
+            candidates = [d["table"] for d in candidate_details]
+            logger.info("  [schema_linking] carry_schema 모드 — 직전 턴 확정 테이블 재사용=%s", candidates)
+            if candidate_details:
+                schema_text = "\n\n".join(d["text"] for d in candidate_details)
+            else:
+                schema_text = schema_provider.get_schema_text(target_tables=None)
+            return {
+                "schema_candidates": candidates,
+                "schema_candidate_details": candidate_details,
+                "schema_text": schema_text,
+                "question_embedding": embedding,
+            }
 
         candidates: list[str] = []
         candidate_details: list[dict] = []
@@ -103,6 +153,11 @@ def make_schema_linking_node(
                     "text": p.payload.get("text", ""),
                 })
             _tier_candidates(candidate_details, embedding, embedder, schema_provider)
+
+            # carry_schema=False일 때 직전 턴 확정 테이블을 합집합으로 강제 포함하는 안전망을
+            # 시도했으나(EXP-010), Execution Accuracy가 오히려 하락해 폐기했다 — 불필요한 테이블이
+            # 후보에 섞여 SQL 생성이 흔들리는 역효과가 스키마 매핑 recall 개선보다 컸다. 이제
+            # prior_tables는 carry_schema=True 경로(위)에서만 쓰인다.
         else:
             logger.warning(
                 "  [schema_linking] 스키마 컬렉션(%s) 없음 — full_dump로 폴백",

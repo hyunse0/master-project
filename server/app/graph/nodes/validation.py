@@ -1,14 +1,18 @@
-"""SchemaCitation → ValueAnchor → SqlValidator(안전성) 순서로 검증한다.
+"""JoinValidity → SchemaCitation → ValueAnchor → SqlValidator(안전성) 순서로 검증한다.
 
-citation/anchor 실패는 재시도 대상(sql_generation_node로 복귀), SqlValidator(안전성) 실패는
-원본 SqlGenPipeline과 동일하게 재시도 없이 종료 대상이다 — 구조적 위반은 프롬프트를
+join/citation/anchor 실패는 재시도 대상(sql_generation_node로 복귀), SqlValidator(안전성)
+실패는 원본 SqlGenPipeline과 동일하게 재시도 없이 종료 대상이다 — 구조적 위반은 프롬프트를
 고쳐도 해결되지 않는다고 본 원본 설계를 그대로 따른다.
+
+join 검증을 가장 먼저 두는 이유는 DB 조회가 필요 없는 순수 sqlglot 검사라 가장 저렴하고,
+카티션 조인이 있으면 그 뒤 citation/anchor 판단도 의미가 흐려지기 때문이다.
 """
 import logging
 
 from app.db.postgres_client import get_domain_connection
 from app.domain.loader import DomainConfig
 from app.graph.state import GraphState
+from app.sql.join_validator import validate_joins
 from app.sql.schema_citation_validator import validate_schema_citations
 from app.sql.validator import SqlValidator
 from app.sql.value_anchor import check_value_anchors
@@ -20,6 +24,16 @@ def make_validation_node(domain: DomainConfig, sql_validator: SqlValidator):
     def validation_node(state: GraphState) -> dict:
         sql = state["sql"]
         retry_count = state.get("retry_count", 0)
+
+        join_result = validate_joins(sql)
+        if not join_result.ok:
+            logger.warning("  [validation] join 검증 실패: %s", join_result.disconnected)
+            return {
+                "retry_count": retry_count + 1,
+                "retry_feedback": join_result.feedback,
+                "retry_error_code": "JOIN_INVALID",
+            }
+        logger.info("  [validation] join 정합성 검증 통과")
 
         conn = get_domain_connection(domain.connection)
         try:

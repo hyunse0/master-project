@@ -1,4 +1,5 @@
 import type { RunResult } from '../../types'
+import { isChartable, ResultChart } from './ResultChart'
 
 function extractSummaryText(markdown: string | null): string {
   if (!markdown) return ''
@@ -36,6 +37,10 @@ export function ResultCard({ result }: { result: RunResult }) {
           </div>
           <pre className="sql-view-box">{result.sql}</pre>
         </div>
+
+        {isChartable(columns, rows, result.query_type) && (
+          <ResultChart columns={columns} rows={rows} />
+        )}
 
         {columns.length > 0 && (
           <div className="result-block">

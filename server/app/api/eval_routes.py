@@ -333,10 +333,11 @@ def get_self_correction_run_status(domain: str) -> dict:
 
 @router.get("/eval/golden-set")
 def get_golden_set(domain: str | None = None) -> dict:
-    """golden_set.json 원본(질문+정답 SQL) 목록에 질문별 마지막 execution_accuracy 실행
-    결과를 붙여 반환한다. 다른 /eval/* 엔드포인트와 달리 run_metrics만으로는 골든셋
-    "항목 자체"(질문 텍스트, 정답 SQL)를 알 수 없으므로 도메인 팩의 golden_set.json을
-    소스로 읽고, run_metrics는 "이 질문을 마지막으로 돌렸을 때 어땠는지"만 조인한다."""
+    """golden_set.json 원본(대화 목록, F단계부터 turns 포맷)을 턴 단위로 펼쳐 질문+정답 SQL에
+    마지막 execution_accuracy 실행 결과를 붙여 반환한다. 다른 /eval/* 엔드포인트와 달리
+    run_metrics만으로는 골든셋 "항목 자체"(질문 텍스트, 정답 SQL)를 알 수 없으므로 도메인
+    팩의 golden_set.json을 소스로 읽고, run_metrics는 "이 질문을 마지막으로 돌렸을 때
+    어땠는지"만 조인한다."""
     if not domain:
         return {"domain": None, "cases": []}
 
@@ -361,16 +362,19 @@ def get_golden_set(domain: str | None = None) -> dict:
     last_by_question = {r["question"]: r for r in last_runs}
 
     cases = []
-    for item in golden:
-        last = last_by_question.get(item["question"])
-        cases.append({
-            "question": item["question"],
-            "expected_sql": item["expected_sql"],
-            "last_run": None if last is None else {
-                "run_id": last["run_id"],
-                "ok": last["golden_correct"] == "true",
-                "generated_sql": last["sql"],
-                "created_at": last["created_at"],
-            },
-        })
+    for conv_idx, conv in enumerate(golden, start=1):
+        for turn_no, item in enumerate(conv["turns"], start=1):
+            last = last_by_question.get(item["question"])
+            cases.append({
+                "question": item["question"],
+                "expected_sql": item["expected_sql"],
+                "conversation_index": conv_idx,
+                "turn_no": turn_no,
+                "last_run": None if last is None else {
+                    "run_id": last["run_id"],
+                    "ok": last["golden_correct"] == "true",
+                    "generated_sql": last["sql"],
+                    "created_at": last["created_at"],
+                },
+            })
     return {"domain": domain, "cases": cases}

@@ -4,6 +4,8 @@ import os
 
 from openai import AzureOpenAI
 
+from app.llm.model_config import get_model_config
+
 logger = logging.getLogger(__name__)
 
 _CACHE_MAXSIZE = 512
@@ -14,11 +16,14 @@ class EmbeddingEngine:
 
     도메인/DB 엔진과 무관 — schema_indexer, retriever, schema_linking_node가 공통으로 쓴다.
     이전엔 로컬 BAAI/bge-m3(sentence-transformers)였으나 게이트웨이의 text-embedding-3-small로
-    교체됐다(1024차원 → 1536차원, 기존 Qdrant 컬렉션은 재색인 필요).
+    교체됐다(1024차원 → 1536차원, 기존 Qdrant 컬렉션은 재색인 필요). 배포명은 app-db
+    `model_config`(비용 대시보드에서 사용자 선택)가 있으면 우선하고, 없으면 .env로 폴백한다 —
+    단, 이미 색인된 컬렉션과 차원이 다른 임베딩으로 바꾸면 재색인 전까지 검색이 깨지므로
+    변경 시 schema_indexer.py/seed_few_shot.py 재실행이 필요하다.
     """
 
     def __init__(self, deployment: str | None = None):
-        self.model_name = deployment or os.environ.get("LLM_EMBEDDING_DEPLOYMENT", "text-embedding-3-small")
+        self.model_name = deployment or get_model_config()["embedding"] or os.environ.get("LLM_EMBEDDING_DEPLOYMENT", "text-embedding-3-small")
         self.client = AzureOpenAI(
             azure_endpoint=os.environ.get("LLM_GATEWAY_BASE_URL", ""),
             api_version=os.environ.get("LLM_GATEWAY_API_VERSION", "2024-12-01-preview"),

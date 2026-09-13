@@ -25,7 +25,6 @@ const NAV_GROUPS: { label: string; items: { label: string; view?: View; soon: bo
     items: [
       { label: '도메인 관리', view: 'domain', soon: false },
       { label: 'Few-shot 예제 관리', view: 'fewshot', soon: false, badgeKey: 'fewshotCandidates' },
-      { label: '검토 정책', soon: true },
       { label: 'Golden Set 평가', view: 'eval', soon: false },
       { label: '비용 대시보드', view: 'cost', soon: false },
       { label: 'MCP 연동', view: 'mcp', soon: false },

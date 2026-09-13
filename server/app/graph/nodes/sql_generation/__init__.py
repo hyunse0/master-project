@@ -64,6 +64,7 @@ def make_sql_generation_node(
             dimensions=state.get("dimensions") or [],
             time_range=state.get("time_range") or {},
             type_guidance=_GUIDANCE_BY_QUERY_TYPE.get(query_type, list_type.GUIDANCE),
+            prior_turn_context=_build_prior_turn_context(state.get("prior_turns")),
         )
         logger.info(
             "  [sql_generation] query_type=%s · few-shot 예제 %d건 · 확정 스키마 %d테이블",
@@ -95,6 +96,20 @@ def make_sql_generation_node(
         }
 
     return sql_generation_node
+
+
+def _build_prior_turn_context(prior_turns: list[dict] | None) -> str | None:
+    """멀티턴(F단계) — 직전 턴의 질문/SQL/요약을 프롬프트에 얹어 "이어서 수정"을 유도한다.
+    prior_turns가 없으면 None(기존 싱글턴 동작과 동일하게 [이전 턴] 블록 자체가 생략됨)."""
+    if not prior_turns:
+        return None
+    prev = prior_turns[-1]
+    lines = [f"이전 질문: {prev['question']}"]
+    if prev.get("sql"):
+        lines.append(f"이전 SQL:\n{prev['sql']}")
+    if prev.get("summary"):
+        lines.append(f"이전 결과 요약: {prev['summary']}")
+    return "\n".join(lines)
 
 
 def _retrieve_few_shot(
