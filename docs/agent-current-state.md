@@ -67,6 +67,24 @@ python scripts/register_domain.py --name <domain> --host ... --dbname ... --sche
 - 테이블 목록: `GET /domain/tables` — 테이블명/코멘트/컬럼 수
 - 테이블 상세: `GET /domain/tables/{table}` — 컬럼(타입/코멘트/PK)/FK 클릭 시 조회
 - (API만 존재, 화면 미연동) `GET /domain/schema-search?q=` — Qdrant 시맨틱 검색
+- **도메인 노트** 팝업(`DomainNotesModal`, `GET/POST/PUT/DELETE /domain/notes`) — SQL 생성·
+  schema_review가 참고하는 도메인 지식을 화면에서 직접 등록/조회/수정/삭제. 3가지 카테고리로
+  구조화(`domain_notes.category`): **코드셋**(대상 테이블/컬럼 + `{코드: 의미}` 목록 — 예:
+  `poc_sslrdexrt.exam_cd`의 `CT001=CT`), **조인**(테이블 A/B + 조인 조건 — 예: 스냅샷 컬럼
+  대신 원천 테이블과 `s_patno`로 JOIN하라는 안내), **일반**(위 둘에 안 맞는 자유 규칙, 테이블
+  지정 선택 가능). 화면이 구조화 입력을 최종 프롬프트 텍스트(`note` 컬럼)로 합성해 저장하고
+  `structured_data`(JSONB)는 편집 시 폼을 복원하는 용도로만 쓰인다 — 백엔드/프롬프트 빌더는
+  category와 무관하게 항상 `note`만 읽으므로 카테고리가 늘어나도 소비처 코드는 안 바뀐다.
+  app-db `domain_notes` 테이블에 저장(도메인 연결 정보와 같은 이유로 git 파일이 아님).
+  테이블을 지정한 노트(코드셋 전부, 일반 중 테이블 지정한 것)는 저장/삭제 시 스키마 임베딩도
+  함께 재색인돼 `schema_linking`의 벡터 검색에도 반영된다 — 조인은 테이블 두 개에 걸쳐 있어
+  `table_name`이 항상 NULL이라 재색인 대상이 아니고 SQL 생성 프롬프트에만 들어간다.
+  (`app/sql/prompt_builder.py` `load_general_notes`/`load_table_notes`가
+  `domains/<domain>/prompt_fragments.yaml`의 `notes:`/`table_retrieval_hints:`와 병합 —
+  새 도메인을 위해 파일에 기본값을 미리 시딩해둘 수도 있다). **향후 방향**: 지금은 사용자가
+  구조화 폼에 직접 입력해야 하는데, 스키마/골든셋
+  실패 사례를 근거로 LLM이 노트 초안을 자동 생성해 제안하는 기능은 아직 없음(수동 등록만
+  지원, 2026-09-14 기준).
 
 ### 2.3 [화면] Few-shot 예제 관리
 사람이 승인 과정에서 SQL을 직접 고친 run을 few-shot 예제로 채택하는 3단계 파이프라인:

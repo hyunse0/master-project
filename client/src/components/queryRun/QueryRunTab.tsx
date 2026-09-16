@@ -7,12 +7,10 @@ import { TurnCard } from './TurnCard'
 import { useRunReview } from './useRunReview'
 import type { Phase } from './stages'
 
-const DEFAULT_QUESTION = '2023년 이후 로봇 수술을 받은 전립선암 환자 수를 Gleason 위험군별로 알려줘'
-
 export function QueryRunTab() {
   const [domainName, setDomainName] = useState<string | null>(null)
   const [pendingCfg, setPendingCfg] = useState<ReviewConfig>({ schema: false, sql: false })
-  const [question, setQuestion] = useState(DEFAULT_QUESTION)
+  const [question, setQuestion] = useState('')
   const [submitError, setSubmitError] = useState<string | null>(null)
 
   // 대화(스레드) 상태 — 완료된 과거 턴은 turns에 얼려두고, 지금 진행 중이거나 검토 대기인
@@ -29,10 +27,10 @@ export function QueryRunTab() {
 
   const {
     phase, result, error, cfg,
-    schemaChecked, columnChecked, sqlDraft, setSqlDraft, sqlDraftEdited, correctionReason, setCorrectionReason,
-    toggleSchemaCandidate, toggleColumn,
+    schemaChecked, sqlDraft, setSqlDraft, sqlDraftEdited, correctionReason, setCorrectionReason,
+    toggleSchemaCandidate,
     goToPhase, loadResult, approveSchema, approveSql, reset,
-    isRunning,
+    isRunning, currentNode, liveLogs,
   } = useRunReview(pendingCfg)
 
   useEffect(() => {
@@ -63,7 +61,10 @@ export function QueryRunTab() {
     setLiveQuestion(q)
     setQuestion('')
     reset()
-    goToPhase('running_create')
+    // 서버 응답(run_id 포함)이 오기 전부터 진행 상황을 폴링하려면 클라이언트가 미리 run_id를
+    // 발급해 보내야 한다 — POST /runs는 동기 호출이라 그 전엔 서버가 만든 run_id를 알 수 없다.
+    const runId = crypto.randomUUID()
+    goToPhase('running_create', runId)
     try {
       const r = await runsApi.create(
         q,
@@ -71,6 +72,7 @@ export function QueryRunTab() {
         pendingCfg,
         conversationId ?? undefined,
         !!conversationId && carryContext,
+        runId,
       )
       if (!conversationId) setConversationId(r.conversation_id)
       loadResult(r)
@@ -96,7 +98,7 @@ export function QueryRunTab() {
     setCollapsedOverride({})
     setCarryContext(true)
     setLiveQuestion('')
-    setQuestion(DEFAULT_QUESTION)
+    setQuestion('')
   }
 
   const onToggleGate = (key: 'schema' | 'sql') => {
@@ -109,28 +111,33 @@ export function QueryRunTab() {
     setCollapsedOverride((prev) => ({ ...prev, [turnNo]: !isCollapsed(turnNo, defaultCollapsed) }))
 
   const blocked = isRunning || phase === 'schema_review' || phase === 'sql_review'
-  const blockedLabel = isRunning
-    ? `턴 ${liveTurnNo}이 실행 중입니다. 완료 후 다음 질문을 보낼 수 있습니다.`
-    : `턴 ${liveTurnNo}이 검토 대기 중입니다. 승인 또는 취소 후 다음 질문을 보낼 수 있습니다.`
+  // 실행 중(isRunning)에는 위쪽 스테이지 레일·러닝 카드에 이미 진행 상황이 보이므로 별도
+  // 안내 배너를 띄우지 않는다 — 검토 대기 중일 때만, 왜 입력이 막혔는지 설명이 필요하다.
+  const blockedLabel = `턴 ${liveTurnNo}이 검토 대기 중입니다. 승인 또는 취소 후 다음 질문을 보낼 수 있습니다.`
   const placeholder = blocked
     ? '검토를 완료해야 다음 질문을 할 수 있습니다'
     : conversationId
       ? '이어서 질문하세요 — 이전 턴의 결과와 스키마를 컨텍스트로 사용합니다'
-      : `예: ${DEFAULT_QUESTION}`
+      : '질문을 입력하세요'
+
+  // 실행 중인 라운드는 result.logs가 아니라 진행 중 폴링으로 받은 liveLogs를 쓴다 —
+  // 서버가 이미 직전 라운드 로그 + 이번 라운드 진행분을 합쳐서 주므로(run_routes.py의
+  // /progress), 실행이 끝나면 자연히 result.logs와 같은 내용이 된다.
+  const liveTurnLogs = isRunning
+    ? liveLogs.map((l) => ({ ...l, turn: liveTurnNo }))
+    : result
+      ? result.logs.map((l) => ({ ...l, turn: result.turn_no }))
+      : []
 
   const allLogs: LogLine[] = [
     ...turns.flatMap((t) => t.logs.map((l) => ({ ...l, turn: t.turn_no }))),
-    ...(result ? result.logs.map((l) => ({ ...l, turn: result.turn_no })) : []),
+    ...liveTurnLogs,
   ]
 
   return (
     <div className="query-run-shell">
       <header className="page-header">
         <h1>질의 실행</h1>
-        <span className="badge-multiturn">멀티턴</span>
-        <span className="thread-meta">
-          thread {conversationId ? conversationId.slice(0, 8) : '—'} · {totalTurns} turns
-        </span>
         <div className="header-spacer" />
         <button
           className="btn-secondary"
@@ -175,13 +182,12 @@ export function QueryRunTab() {
             phase={phase}
             cfg={cfg}
             isLive
+            currentNode={currentNode}
             collapsed={isCollapsed(liveTurnNo, false)}
             onToggleCollapse={() => toggleCollapsed(liveTurnNo, false)}
             live={{
               schemaChecked,
-              columnChecked,
               onToggleSchemaCandidate: toggleSchemaCandidate,
-              onToggleColumn: toggleColumn,
               onCancelSchema: retryLiveTurn,
               onApproveSchema: approveSchema,
               sqlDraft,
@@ -198,11 +204,9 @@ export function QueryRunTab() {
       </div>
 
       <div className="composer-footer">
-        <ExecutionLogPanel logs={allLogs} isRunning={isRunning} countSuffix={totalTurns > 1 ? ` · ${totalTurns} turns` : ''} />
-
         {(submitError || error) && <div className="run-error-banner">{submitError ?? error}</div>}
 
-        {blocked && (
+        {(phase === 'schema_review' || phase === 'sql_review') && (
           <div className="composer-blocked-banner">
             <span className="composer-blocked-mark">!</span>
             <span className="composer-blocked-text">{blockedLabel}</span>
@@ -258,6 +262,8 @@ export function QueryRunTab() {
             POST /runs · thread_id {conversationId ? conversationId.slice(0, 8) : '—'}
           </span>
         </div>
+
+        <ExecutionLogPanel logs={allLogs} isRunning={isRunning} countSuffix={totalTurns > 1 ? ` · ${totalTurns} turns` : ''} />
       </div>
     </div>
   )

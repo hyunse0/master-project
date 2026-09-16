@@ -1,7 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { runsApi } from '../../api/runsClient'
-import type { ReviewConfig, RunResult } from '../../types'
+import type { LogLine, ReviewConfig, RunResult } from '../../types'
 import { activeStageIndex, computeStages, isRunningPhase, type Phase } from './stages'
+
+const PROGRESS_POLL_MS = 800
 
 const IDLE_CFG: ReviewConfig = { schema: false, sql: false }
 
@@ -14,20 +16,52 @@ export function useRunReview(pendingCfg: ReviewConfig = IDLE_CFG) {
   const [result, setResult] = useState<RunResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [schemaChecked, setSchemaChecked] = useState<Record<string, boolean>>({})
-  // 테이블 → non-key 컬럼명 → 체크 여부. column_tiers.relevant는 기본 체크, other는 기본
-  // 미체크로 시딩된다 — key 컬럼은 항상 강제 포함이라 여기서 따로 추적하지 않는다.
-  const [columnChecked, setColumnChecked] = useState<Record<string, Record<string, boolean>>>({})
   const [sqlDraft, setSqlDraft] = useState('')
   const [correctionReason, setCorrectionReason] = useState('')
   // 사용자가 스테이지 레일에서 직접 클릭해 들여다보고 있는 단계 — null이면 실시간 진행을 따라간다.
   const [selectedStageNo, setSelectedStageNo] = useState<string | null>(null)
+  // running_* phase 동안 GET /runs/{id}/progress를 폴링해 얻는 실제 실행 중 노드 이름과
+  // 지금까지 쌓인 로그 — 로그는 result가 오기 전까지 실행 로그 패널을 실시간으로 채우는 데 쓴다.
+  const [pollRunId, setPollRunId] = useState<string | null>(null)
+  const [currentNode, setCurrentNode] = useState<string | null>(null)
+  const [liveLogs, setLiveLogs] = useState<LogLine[]>([])
 
   // 진행이 한 단계 나아갈 때마다, 사용자가 보고 있던 스냅샷은 실시간 화면으로 되돌린다 —
   // 검토 승인이 필요한 순간에 엉뚱한 과거 단계를 보고 있다가 놓치는 일이 없도록 한다.
-  const goToPhase = (p: Phase) => {
+  // running_* phase로 들어갈 때만 pollId를 넘겨 progress 폴링 대상을 지정한다 — 그 외
+  // phase에서는 폴링을 멈추고 지난 노드 표시를 지운다.
+  const goToPhase = (p: Phase, pollId?: string) => {
     setSelectedStageNo(null)
     setPhase(p)
+    if (isRunningPhase(p)) {
+      setPollRunId(pollId ?? null)
+      setLiveLogs([])
+    } else {
+      setPollRunId(null)
+      setCurrentNode(null)
+    }
   }
+
+  useEffect(() => {
+    if (!pollRunId) return
+    let cancelled = false
+    const tick = () => {
+      runsApi
+        .progress(pollRunId)
+        .then((r) => {
+          if (cancelled) return
+          setCurrentNode(r.current_node)
+          setLiveLogs(r.logs)
+        })
+        .catch(() => {})
+    }
+    tick()
+    const id = setInterval(tick, PROGRESS_POLL_MS)
+    return () => {
+      cancelled = true
+      clearInterval(id)
+    }
+  }, [pollRunId])
 
   /** POST /runs·resume 응답이든 GET /runs/{id} 조회 결과든, status를 보고 어느 화면을
    * 보여줄지 정한다 — 전부 서버가 실제로 멈춘 지점을 그대로 반영한 것이지 클라이언트가
@@ -37,17 +71,6 @@ export function useRunReview(pendingCfg: ReviewConfig = IDLE_CFG) {
     setError(null)
     if (r.status === 'interrupted_schema') {
       setSchemaChecked(Object.fromEntries(r.schema_candidates.map((t) => [t, true])))
-      setColumnChecked(
-        Object.fromEntries(
-          r.schema_candidate_details.map((c) => [
-            c.table,
-            Object.fromEntries([
-              ...c.column_tiers.relevant.map((col) => [col, true]),
-              ...c.column_tiers.other.map((col) => [col, false]),
-            ]),
-          ]),
-        ),
-      )
       goToPhase('schema_review')
       return
     }
@@ -65,18 +88,9 @@ export function useRunReview(pendingCfg: ReviewConfig = IDLE_CFG) {
     const confirmed = result.schema_candidate_details
       .map((c) => c.table)
       .filter((t) => schemaChecked[t])
-    // 서버가 기대하는 confirmed_columns는 완전 대체 목록이다 — 체크된 컬럼만 뽑아 보낸다.
-    const confirmedColumns: Record<string, string[]> = {}
-    for (const t of confirmed) {
-      const cols = columnChecked[t] ?? {}
-      confirmedColumns[t] = Object.keys(cols).filter((c) => cols[c])
-    }
-    goToPhase('running_after_schema')
+    goToPhase('running_after_schema', result.run_id)
     try {
-      const r = await runsApi.resume(result.run_id, {
-        confirmed_schema: confirmed,
-        confirmed_columns: confirmedColumns,
-      })
+      const r = await runsApi.resume(result.run_id, { confirmed_schema: confirmed })
       loadResult(r)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'resume 요청 실패')
@@ -90,7 +104,7 @@ export function useRunReview(pendingCfg: ReviewConfig = IDLE_CFG) {
 
   const approveSql = async () => {
     if (!result) return
-    goToPhase('running_after_sql')
+    goToPhase('running_after_sql', result.run_id)
     try {
       const r = await runsApi.resume(result.run_id, {
         sql: sqlDraft,
@@ -108,7 +122,6 @@ export function useRunReview(pendingCfg: ReviewConfig = IDLE_CFG) {
     setResult(null)
     setError(null)
     setSchemaChecked({})
-    setColumnChecked({})
     setSqlDraft('')
     setCorrectionReason('')
   }
@@ -117,10 +130,10 @@ export function useRunReview(pendingCfg: ReviewConfig = IDLE_CFG) {
   // 입력 중인) 단계에서만 pendingCfg(사용자가 지금 고르고 있는 다음 실행 설정)를 쓴다.
   // 완료된 run에 대해 나중에 토글을 바꿔도 그 run의 실제 검토 이력 표시는 바뀌지 않는다.
   const cfg = result?.review_config ?? pendingCfg
-  const stages = computeStages(phase, cfg, result)
+  const stages = computeStages(phase, cfg, result, currentNode)
   const isRunning = isRunningPhase(phase)
 
-  const activeIdx = activeStageIndex(phase, result)
+  const activeIdx = activeStageIndex(phase, result, currentNode)
   const activeStageNo = phase === 'done' ? '5' : activeIdx >= 0 && activeIdx <= 4 ? String(activeIdx + 1) : null
   const reachedIdx = phase === 'done' ? 4 : activeIdx
   const viewedStageNo = selectedStageNo ?? activeStageNo
@@ -132,16 +145,12 @@ export function useRunReview(pendingCfg: ReviewConfig = IDLE_CFG) {
 
   return {
     phase, result, error, cfg,
-    schemaChecked, columnChecked, sqlDraft, setSqlDraft, sqlDraftEdited,
+    schemaChecked, sqlDraft, setSqlDraft, sqlDraftEdited,
     correctionReason, setCorrectionReason,
     toggleSchemaCandidate: (t: string) => setSchemaChecked((prev) => ({ ...prev, [t]: !prev[t] })),
-    toggleColumn: (table: string, column: string) =>
-      setColumnChecked((prev) => ({
-        ...prev,
-        [table]: { ...prev[table], [column]: !prev[table]?.[column] },
-      })),
     goToPhase, loadResult, approveSchema, approveSql, reset,
     stages, isRunning, viewedStageNo, reachedIdx, showSnapshot, onSelectStage,
+    currentNode, liveLogs,
   }
 }
 

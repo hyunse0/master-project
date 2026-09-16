@@ -67,8 +67,9 @@ def make_sql_generation_node(
             prior_turn_context=_build_prior_turn_context(state.get("prior_turns")),
         )
         logger.info(
-            "  [sql_generation] query_type=%s · few-shot 예제 %d건 · 확정 스키마 %d테이블",
-            query_type, len(few_shot_examples), len(state.get("confirmed_schema") or []),
+            "  [sql_generation] 시도 %d · query_type=%s · few-shot 예제 %d건 · 확정 스키마 %d테이블",
+            state.get("retry_count", 0) + 1, query_type, len(few_shot_examples),
+            len(state.get("confirmed_schema") or []),
         )
         raw = llm.generate(prompt, run_id=run_id, node="sql_generation", tags=tags)
 

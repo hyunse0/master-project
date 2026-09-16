@@ -51,7 +51,7 @@ _SELECT_PROMPT = """\
 조인에 필요한 연결 테이블(예: 환자 식별자를 가진 테이블)은 질문에 직접 언급되지 않아도
 필요하면 포함하세요. 포함할지 애매한 후보는 제외하지 말고 포함하세요 — 불필요한 테이블을
 하나 더 포함하는 것보다 필요한 테이블을 빠뜨리는 게 더 나쁩니다.
-
+{domain_notes_section}
 질문: {question}
 질문 의도: {intent}
 
@@ -88,14 +88,16 @@ def _parse_selected_tables(raw: str) -> list[str] | None:
 
 
 def _select_tables(
-    llm: TokenCountingLLM, state: GraphState, candidates: list[str], details: list[dict]
+    llm: TokenCountingLLM, state: GraphState, candidates: list[str], details: list[dict], domain_notes: str = ""
 ) -> list[str]:
     run_id = state.get("run_id", "")
     tags = state.get("tags") or {}
+    domain_notes_section = f"\n[도메인 참고사항]\n{domain_notes}\n" if domain_notes else ""
     prompt = _SELECT_PROMPT.format(
         question=state["question"],
         intent=state.get("intent", ""),
         candidates=_format_candidates(details, candidates),
+        domain_notes_section=domain_notes_section,
     )
     try:
         raw = llm.generate(prompt, run_id=run_id, node="schema_review", tags=tags)
@@ -172,7 +174,9 @@ def _assemble_schema_text(
     return "\n\n".join(blocks)
 
 
-def make_schema_review_node(llm: TokenCountingLLM, schema_provider: SchemaProvider, embedder: EmbeddingEngine):
+def make_schema_review_node(
+    llm: TokenCountingLLM, schema_provider: SchemaProvider, embedder: EmbeddingEngine, domain_notes: str = ""
+):
     def schema_review_node(state: GraphState) -> dict:
         candidates = state.get("schema_candidates") or []
         details = state.get("schema_candidate_details") or []
@@ -186,10 +190,14 @@ def make_schema_review_node(llm: TokenCountingLLM, schema_provider: SchemaProvid
                 selected = resumed.get("tables") or []
                 confirmed_columns = resumed.get("columns") or None
         elif not candidates:
+            logger.info("  [schema_review] 후보 없음 — 빈 스키마로 진행")
             return {"confirmed_schema": []}
         else:
-            selected = _select_tables(llm, state, candidates, details)
+            selected = _select_tables(llm, state, candidates, details, domain_notes)
             confirmed_columns = None
+
+        source = "사람 검토" if bool((state.get("review_config") or {}).get("schema")) else "자동 확정"
+        logger.info("  [schema_review] %s — 확정 테이블 %d개: %s", source, len(selected), selected)
 
         if not candidates:
             return {"confirmed_schema": selected, "confirmed_columns": confirmed_columns}

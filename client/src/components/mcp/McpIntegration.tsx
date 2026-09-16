@@ -331,27 +331,6 @@ export function McpIntegration() {
             })}
           </div>
         </section>
-
-        {/* Zone 4 — 안전장치 */}
-        <section className="panel">
-          <div className="panel-head">
-            <h2>안전장치</h2>
-          </div>
-
-          <div className="mcp-zone-body">
-            <div className="mcp-notice success">
-              <span className="mcp-notice-icon">✓</span>
-              <span>raw SQL을 그대로 실행하는 tool은 없습니다. 모든 실행은 스키마 인용 검증과 값 앵커 검증을 통과해야만 DB로 나갑니다.</span>
-            </div>
-            <div className="mcp-notice info">
-              <span className="mcp-notice-icon">i</span>
-              <span>MCP 경유 실행은 항상 자동 모드입니다. 스키마 검토·SQL 검토 인터럽트 없이 한 번에 끝까지 실행됩니다.</span>
-            </div>
-            <span className="mcp-field-hint">
-              향후 확장 후보: MCP 경유 호출 로그. 현재 run_logger가 REST/MCP 호출원을 구분해 태깅하지 않아 별도 계측이 선행되어야 합니다.
-            </span>
-          </div>
-        </section>
       </div>
     </>
   )

@@ -110,3 +110,34 @@ CREATE TABLE IF NOT EXISTS run_metrics (
 );
 
 CREATE INDEX IF NOT EXISTS run_metrics_tags_idx ON run_metrics USING GIN (tags);
+
+-- 도메인 지식 노트. 화면(도메인 관리 탭)에서 사용자가 직접 등록 — domain_connections와 같은
+-- 이유로 git 파일이 아니라 여기 저장한다. table_name이 NULL이면 도메인 전체에 적용되는 일반
+-- 규칙(날짜 형식, 우선순위 규칙 등), 값이 있으면 특정 테이블 전용 노트(코드값 vocabulary 등)다.
+-- 후자는 SQL 생성 프롬프트(domain_notes)뿐 아니라 스키마 임베딩(schema_indexer.py)에도 함께
+-- 반영된다 — EXP-017/018에서 "같은 내용을 한쪽 소비처에만 배선해 효과가 반감됐던" 문제를
+-- 애초에 UI 레벨에서 막기 위함(app/sql/prompt_builder.py 참고).
+-- category: 'codeset'(테이블.컬럼의 코드값 목록) | 'join'(테이블 간 조인 키/대체 안내) |
+-- 'general'(위 둘에 안 맞는 자유 규칙 — 날짜 형식, 노출 제한, 테이블 성격 설명 등).
+-- structured_data는 category='codeset'/'join'일 때 화면 폼을 그대로 복원하기 위한 원본
+-- 구조(예: {"table":..,"column":..,"codes":{"CT001":"CT"}})이고, note는 그 구조로부터
+-- 화면(DomainNotesModal)이 합성한 최종 프롬프트 텍스트다 — 백엔드/프롬프트 빌더는 note만
+-- 읽으므로 category가 늘어나도 소비처 코드를 바꿀 필요가 없다. category='general'이면
+-- structured_data는 NULL이고 note가 사용자가 직접 쓴 텍스트 그대로다.
+CREATE TABLE IF NOT EXISTS domain_notes (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  domain          TEXT NOT NULL,
+  table_name      TEXT,
+  category        TEXT NOT NULL DEFAULT 'general',
+  structured_data JSONB,
+  note            TEXT NOT NULL,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- CREATE TABLE IF NOT EXISTS는 기존 테이블에 컬럼을 추가해주지 않으므로, 이미 만들어진
+-- domain_notes에 category/structured_data를 뒤늦게 추가하는 경우를 위해 명시적으로 ALTER.
+ALTER TABLE domain_notes ADD COLUMN IF NOT EXISTS category        TEXT NOT NULL DEFAULT 'general';
+ALTER TABLE domain_notes ADD COLUMN IF NOT EXISTS structured_data JSONB;
+
+CREATE INDEX IF NOT EXISTS domain_notes_domain_idx ON domain_notes (domain, table_name);

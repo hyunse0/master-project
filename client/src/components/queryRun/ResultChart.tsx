@@ -3,8 +3,8 @@
 
 const MAX_BARS = 15
 const CHART_WIDTH = 480
-const BAR_HEIGHT = 22
-const BAR_GAP = 8
+const BAR_HEIGHT = 16
+const BAR_GAP = 5
 const LABEL_WIDTH = 140
 
 function toFiniteNumber(value: unknown): number | null {
@@ -49,7 +49,7 @@ export function ResultChart({
         width="100%"
         role="img"
         aria-label={`${categoryCol}별 ${valueCol} 막대 차트`}
-        style={{ display: 'block', marginTop: 8 }}
+        style={{ display: 'block', marginTop: 8, maxWidth: CHART_WIDTH }}
       >
         {rows.map((row, i) => {
           const value = values[i]

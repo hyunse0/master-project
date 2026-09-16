@@ -18,9 +18,7 @@ const STATUS_LABEL: Record<string, string> = {
 // 진행 중인(라이브) 턴에서만 필요한 검토/재개 핸들러 — 이미 끝난 과거 턴은 다시 손댈 수 없다.
 interface LiveReview {
   schemaChecked: Record<string, boolean>
-  columnChecked: Record<string, Record<string, boolean>>
   onToggleSchemaCandidate: (table: string) => void
-  onToggleColumn: (table: string, column: string) => void
   onCancelSchema: () => void
   onApproveSchema: () => void
   sqlDraft: string
@@ -39,6 +37,8 @@ interface Props {
   phase: Phase
   cfg: ReviewConfig
   isLive: boolean
+  // 라이브 턴이 running_* phase일 때 GET /runs/{id}/progress로 알아낸 실제 실행 중 노드.
+  currentNode?: string | null
   collapsed: boolean
   onToggleCollapse: () => void
   live?: LiveReview
@@ -58,9 +58,9 @@ function collapsedSummaryOf(phase: Phase, result: RunResult | null): string {
  * 스테이지 레일 + 단계별 카드를 그대로 보여준다. isLive가 아닌 턴은 이미 종료된(success/error)
  * 상태만 오므로 검토 카드가 뜰 일이 없다 — live만 SchemaReviewCard/SqlReviewCard를 받는다. */
 export function TurnCard({
-  turnNo, question, result, phase, cfg, isLive, collapsed, onToggleCollapse, live, onFollowUp,
+  turnNo, question, result, phase, cfg, isLive, currentNode, collapsed, onToggleCollapse, live, onFollowUp,
 }: Props) {
-  const stages = computeStages(phase, cfg, result)
+  const stages = computeStages(phase, cfg, result, currentNode)
   const statusKey = isRunningPhase(phase)
     ? 'running'
     : phase === 'schema_review'
@@ -113,15 +113,13 @@ export function TurnCard({
 
           <StageRail stages={stages} cfg={cfg} onToggleGate={noopToggleGate} readOnly />
 
-          {isRunningPhase(phase) && <RunningWorkCard phase={phase} />}
+          {isRunningPhase(phase) && <RunningWorkCard phase={phase} currentNode={currentNode} />}
 
           {phase === 'schema_review' && result && live && (
             <SchemaReviewCard
               candidates={result.schema_candidate_details}
               checked={live.schemaChecked}
               onToggle={live.onToggleSchemaCandidate}
-              columnChecked={live.columnChecked}
-              onToggleColumn={live.onToggleColumn}
               onCancel={live.onCancelSchema}
               onApprove={live.onApproveSchema}
             />

@@ -12,18 +12,22 @@ run_nl2sql_query는 review_config을 항상 {"schema": False, "sql": False}로 �
 자동 모드만 지원한다.
 """
 from mcp.server.mcpserver import MCPServer
+from qdrant_client.models import FusionQuery, Prefetch, Fusion
 
 from app.api import run_routes
 from app.domain.loader import get_domain
 from app.embedding.embedder import EmbeddingEngine
+from app.embedding.sparse_embedder import SparseEmbedder
 from app.knowledge.qdrant_connection import get_qdrant_client
 from app.knowledge.qdrant_store import QdrantFewShotStore
+from app.knowledge.schema_indexer import DENSE_VECTOR_NAME, SPARSE_VECTOR_NAME
 from app.sql.retriever import SqlRetriever
 from app.sql.schema_provider import SchemaProvider
 
 mcp_server = MCPServer("data-access-copilot")
 
 _embedder: EmbeddingEngine | None = None
+_sparse_embedder: SparseEmbedder | None = None
 
 
 def _get_embedder() -> EmbeddingEngine:
@@ -31,6 +35,13 @@ def _get_embedder() -> EmbeddingEngine:
     if _embedder is None:
         _embedder = EmbeddingEngine()
     return _embedder
+
+
+def _get_sparse_embedder() -> SparseEmbedder:
+    global _sparse_embedder
+    if _sparse_embedder is None:
+        _sparse_embedder = SparseEmbedder()
+    return _sparse_embedder
 
 
 @mcp_server.tool()
@@ -108,11 +119,19 @@ def search_schema(query: str, limit: int = 5) -> list[dict]:
     """자연어 질의와 의미적으로 가까운 테이블을 스키마 인덱스(Qdrant schema_{domain})에서 검색한다."""
     domain = get_domain()
     embedder = _get_embedder()
+    sparse_embedder = _get_sparse_embedder()
     client = get_qdrant_client()
 
     vector = embedder.embed(query)
+    sparse_vector = sparse_embedder.embed_query(query)
     results = client.query_points(
-        collection_name=domain.qdrant_schema_collection, query=vector, limit=limit
+        collection_name=domain.qdrant_schema_collection,
+        prefetch=[
+            Prefetch(query=vector, using=DENSE_VECTOR_NAME, limit=max(limit, 20)),
+            Prefetch(query=sparse_vector, using=SPARSE_VECTOR_NAME, limit=max(limit, 20)),
+        ],
+        query=FusionQuery(fusion=Fusion.RRF),
+        limit=limit,
     ).points
 
     return [

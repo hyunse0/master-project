@@ -52,16 +52,28 @@ class AddEntryRequest(BaseModel):
 
 @router.post("/entries")
 def add_entry(body: AddEntryRequest) -> dict:
+    """히스토리의 "후보"(사람이 SQL을 고쳐 승인한 run) 채택뿐 아니라, 질의 실행 탭의 결과
+    카드에서 방금 성공한 run을 바로 채택하는 경로로도 쓰인다 — 후자는 sql_edited가 아니어도
+    되고(사람이 지금 "이 결과를 예제로 쓰겠다"고 누르는 것 자체가 채택 판단이다), 대신
+    같은 run을 두 번 눌러도 중복 항목이 쌓이지 않도록 source_run_id 기준으로 idempotent하게
+    처리한다."""
     resolved = _resolve_domain(body.domain)
     row = run_manager.get(body.run_id)
     if row is None:
         raise HTTPException(404, "run을 찾을 수 없습니다")
 
     snapshot = row["state_snapshot"]
-    if not snapshot.get("sql_edited"):
-        raise HTTPException(400, "사람이 SQL을 직접 고쳐 승인한 run만 few-shot으로 채택할 수 있습니다")
+    if not snapshot.get("sql"):
+        raise HTTPException(400, "sql이 없는 run은 few-shot으로 채택할 수 없습니다")
 
-    return few_shot_store.add_entry(
+    existing = next(
+        (e for e in few_shot_store.list_entries(resolved) if e.get("source_run_id") == body.run_id),
+        None,
+    )
+    if existing:
+        return {**existing, "status": "exists"}
+
+    entry = few_shot_store.add_entry(
         resolved,
         question=row["question"],
         intent=snapshot.get("task_type") or "",
@@ -71,6 +83,7 @@ def add_entry(body: AddEntryRequest) -> dict:
         sql_before_edit=snapshot.get("sql_before_edit"),
         correction_reason=snapshot.get("correction_reason"),
     )
+    return {**entry, "status": "added"}
 
 
 @router.delete("/entries/{entry_id}")

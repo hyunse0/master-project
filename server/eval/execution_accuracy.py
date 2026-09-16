@@ -107,6 +107,9 @@ def run(
     if not golden:
         return {"skipped": True, "reason": "golden_set_empty", "total": 0, "correct": 0, "accuracy": None}
 
+    # 이 run() 1회 호출 전체를 식별하는 배치 ID — "Golden Set 평가" 화면이 누적 전체가 아니라
+    # 최신 1회 실행만 보여줄 수 있도록 태그에 남긴다(app/api/eval_routes.py get_execution_accuracy).
+    batch_id = str(uuid.uuid4())
     graph = build_graph(domain)
     # 요약 충실도 판정은 SQL을 생성한 모델과 같은 모델이 채점하면 후해지는 문제가 있어
     # (같은 LLM의 자기평가 편향), 생성 티어(LOW/HIGH)와 분리된 judge 전용 모델을 쓴다.
@@ -176,6 +179,7 @@ def run(
                     "difficulty": state.get("difficulty"),
                     "golden_correct": ok,
                     "turn_no": turn_no,
+                    "batch_id": batch_id,
                 },
             )
             run_logger.log(
@@ -190,6 +194,7 @@ def run(
                     "recall": round(recall, 4),
                     "f1": round(f1, 4),
                     "turn_no": turn_no,
+                    "batch_id": batch_id,
                 },
             )
 
@@ -219,6 +224,7 @@ def run(
                             "columns": state.get("columns") or [],
                             "rows": (state.get("rows") or [])[:5],
                             "turn_no": turn_no,
+                            "batch_id": batch_id,
                         },
                     )
 

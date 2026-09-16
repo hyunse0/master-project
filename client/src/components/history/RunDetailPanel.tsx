@@ -39,8 +39,8 @@ export function RunDetailPanel({ runId, createdAt, onAfterResume, onClose }: Pro
 
   const {
     phase, result, error, cfg,
-    schemaChecked, columnChecked, sqlDraft, setSqlDraft, sqlDraftEdited, correctionReason, setCorrectionReason,
-    toggleSchemaCandidate, toggleColumn,
+    schemaChecked, sqlDraft, setSqlDraft, sqlDraftEdited, correctionReason, setCorrectionReason,
+    toggleSchemaCandidate,
     loadResult, approveSchema, approveSql,
     stages, isRunning, viewedStageNo, reachedIdx, showSnapshot, onSelectStage,
   } = useRunReview()
@@ -149,8 +149,6 @@ export function RunDetailPanel({ runId, createdAt, onAfterResume, onClose }: Pro
           candidates={result.schema_candidate_details}
           checked={schemaChecked}
           onToggle={toggleSchemaCandidate}
-          columnChecked={columnChecked}
-          onToggleColumn={toggleColumn}
           onCancel={onClose}
           onApprove={() => approveAndRefresh(approveSchema)}
         />

@@ -18,12 +18,14 @@ export const fewshotApi = {
     fetch(`${API_BASE}/fewshot/entries?domain=${encodeURIComponent(domain)}`).then(handle<FewShotEntry[]>),
 
   // 후보 하나를 few_shot.json에 채택한다 — 채택 즉시 Qdrant에 반영되는 건 아니다(POST /seed 별도).
-  add: (domain: string, runId: string): Promise<FewShotEntry> =>
+  // 같은 run_id로 이미 채택돼 있으면 서버가 중복 생성 대신 기존 항목을 status: 'exists'로
+  // 돌려준다(질의 실행 탭 결과 카드에서 같은 run을 여러 번 눌러도 안전하게).
+  add: (domain: string, runId: string): Promise<FewShotEntry & { status: 'added' | 'exists' }> =>
     fetch(`${API_BASE}/fewshot/entries`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ domain, run_id: runId }),
-    }).then(handle<FewShotEntry>),
+    }).then(handle<FewShotEntry & { status: 'added' | 'exists' }>),
 
   remove: (domain: string, entryId: string): Promise<{ deleted: string }> =>
     fetch(`${API_BASE}/fewshot/entries/${entryId}?domain=${encodeURIComponent(domain)}`, {

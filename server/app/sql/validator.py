@@ -39,9 +39,15 @@ class SqlValidator:
         elif not isinstance(parsed, exp.Select):
             errors.append("이 서비스는 읽기 전용입니다.")
 
-        # 2. 참조 테이블 검사
+        # 2. 참조 테이블 검사 — WITH절 CTE 별칭은 sqlglot이 exp.Table로도 잡아내므로
+        # (예: `WITH path_latest AS (...) SELECT ... FROM path_latest`), CTE 이름 목록을
+        # 뽑아 제외한다. 안 그러면 CTE를 쓰는 SQL이 전부 "허용되지 않는 테이블"로 오탐된다
+        # (eval/schema_recall_diagnostic.py의 _extract_tables에 있던 것과 같은 버그).
+        cte_names = {c.alias_or_name.lower() for c in parsed.find_all(exp.CTE)}
         for table in parsed.find_all(exp.Table):
             tbl_name = table.name.lower()
+            if tbl_name in cte_names:
+                continue
             if tbl_name not in self._allowed:
                 errors.append(f"허용되지 않는 테이블입니다: {tbl_name}")
 

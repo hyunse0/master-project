@@ -5,6 +5,7 @@ python-dotenv==1.2.2
 psycopg2-binary==2.9.12
 Faker==34.0.0
 qdrant-client==1.18.0
+fastembed==0.8.0
 cryptography==50.0.0
 langgraph==1.2.11
 langgraph-checkpoint-postgres==3.1.1

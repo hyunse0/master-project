@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Data Access Copilot Architecture</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#f4f5f9;
+    --surface:#ffffff;
+    --surface-2:#eceff5;
+    --ink:#1a2032;
+    --ink-dim:#5b6478;
+    --line:#d4d7e2;
+    --line-strong:#6b7386;
+
+    --client-a:#2f6fed; --client-bg:#eaf1ff;
+    --api-a:#6a4cd8;    --api-bg:#f1edfd;
+    --orch-a:#d9711f;   --orch-bg:#fdeee1;
+    --orch-bg-2:#fbdcc0;
+    --rag-a:#0f8f68;    --rag-bg:#e6f6ef;
+    --llm-a:#a83a97;    --llm-bg:#fbeaf8;
+    --data-a:#3c4a63;   --data-bg:#eaedf3;
+
+    --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    --sans: "IBM Plex Sans", -apple-system, "Segoe UI", sans-serif;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#10131c; --surface:#171c29; --surface-2:#1e2434;
+      --ink:#e8ebf4; --ink-dim:#9aa3b8; --line:#2d3548; --line-strong:#8a93ab;
+      --client-a:#6d9bff; --client-bg:#1a2a4d;
+      --api-a:#a98cf2; --api-bg:#241c3f;
+      --orch-a:#f3985c; --orch-bg:#3a2718; --orch-bg-2:#4a3520;
+      --rag-a:#3dd6a4; --rag-bg:#12302a;
+      --llm-a:#e06fd0; --llm-bg:#3a1d3a;
+      --data-a:#aab6cc; --data-bg:#1c2436;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#10131c; --surface:#171c29; --surface-2:#1e2434;
+    --ink:#e8ebf4; --ink-dim:#9aa3b8; --line:#2d3548; --line-strong:#8a93ab;
+    --client-a:#6d9bff; --client-bg:#1a2a4d;
+    --api-a:#a98cf2; --api-bg:#241c3f;
+    --orch-a:#f3985c; --orch-bg:#3a2718; --orch-bg-2:#4a3520;
+    --rag-a:#3dd6a4; --rag-bg:#12302a;
+    --llm-a:#e06fd0; --llm-bg:#3a1d3a;
+    --data-a:#aab6cc; --data-bg:#1c2436;
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family:var(--sans);
+    padding-inline:20px;
+    padding-block:24px;
+    max-width:1680px;
+    margin:0 auto;
+  }
+
+  .diagram-card{
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:16px;
+    padding:18px;
+    margin-block:0 18px;
+  }
+  .diagram-scroll{
+    overflow-x:auto;
+    padding-bottom:4px;
+  }
+  svg.arch{
+    display:block;
+    width:1600px;
+    height:auto;
+    color:var(--line-strong);
+  }
+
+  .box-title{font-family:var(--sans); font-weight:700; fill:var(--ink);}
+  .box-sub{font-family:var(--mono); fill:var(--ink-dim);}
+  .chip-text{font-family:var(--mono); fill:var(--ink);}
+  .arrow-label{font-family:var(--sans); fill:var(--ink-dim);}
+  .section-label{font-family:var(--mono); font-weight:600; letter-spacing:.04em;}
+
+  .legend{
+    display:flex; flex-wrap:wrap; gap:18px 30px;
+    background:var(--surface); border:1px solid var(--line); border-radius:16px;
+    padding:18px 22px; margin-block:0;
+    font-size:17px; color:var(--ink-dim);
+  }
+  .legend-item{display:flex; align-items:center; gap:10px;}
+  .swatch{width:30px; height:2.5px; background:var(--line-strong); flex:none;}
+  .swatch.dashed{background:none; border-top:2.5px dashed var(--line-strong);}
+  .swatch.curve{width:30px; height:14px; border:2.5px dashed var(--orch-a); border-bottom:none; border-radius:14px 14px 0 0; background:none;}
+  .swatch.node{width:24px; height:17px; border:2.5px dashed var(--orch-a); border-radius:4px; background:var(--orch-bg);}
+</style>
+</head>
+<body>
+
+<div class="diagram-card">
+  <div class="diagram-scroll">
+    <svg class="arch" viewBox="0 0 1600 1600" role="img"
+         aria-label="Data Access Copilot 아키텍처: 웹 클라이언트와 MCP 클라이언트가 FastAPI API Gateway를 거쳐 LangGraph 기반 Agent Orchestrator로 들어가고, Orchestrator는 Qdrant 기반 RAG 파이프라인과 Azure OpenAI 호환 LLM Gateway를 호출하며, 최종적으로 대상 도메인 Postgres에 SQL을 실행하고 App-DB Postgres에 체크포인트와 run 상태를 저장한다.">
+      <defs>
+        <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+        </marker>
+      </defs>
+
+      <!-- ============ 1. CLIENTS ============ -->
+      <text x="120" y="34" class="section-label" font-size="18" fill="var(--client-a)">① 클라이언트</text>
+      <g>
+        <rect x="120" y="50" width="660" height="92" rx="12" fill="var(--client-bg)" stroke="var(--client-a)" stroke-width="1.6"/>
+        <text x="450" y="86" text-anchor="middle" class="box-title" font-size="22">웹 클라이언트</text>
+        <text x="450" y="110" text-anchor="middle" class="box-sub" font-size="17">React 19 + Vite · TypeScript</text>
+      </g>
+      <g>
+        <rect x="820" y="50" width="660" height="92" rx="12" fill="var(--client-bg)" stroke="var(--client-a)" stroke-width="1.6"/>
+        <text x="1150" y="86" text-anchor="middle" class="box-title" font-size="22">MCP 클라이언트</text>
+        <text x="1150" y="110" text-anchor="middle" class="box-sub" font-size="17">외부 에이전트 및 도구</text>
+      </g>
+      <line x1="450" y1="142" x2="450" y2="188" stroke="currentColor" stroke-width="1.6" marker-end="url(#arrow)"/>
+      <line x1="1150" y1="142" x2="1150" y2="188" stroke="currentColor" stroke-width="1.6" marker-end="url(#arrow)"/>
+      <text x="470" y="168" class="arrow-label" font-size="18">HTTP (fetch)</text>
+      <text x="1170" y="168" class="arrow-label" font-size="18">MCP</text>
+
+      <!-- ============ 2. API GATEWAY ============ -->
+      <text x="120" y="176" class="section-label" font-size="18" fill="var(--api-a)">② API Gateway</text>
+      <g>
+        <rect x="120" y="190" width="1360" height="92" rx="12" fill="var(--api-bg)" stroke="var(--api-a)" stroke-width="1.6"/>
+        <text x="800" y="226" text-anchor="middle" class="box-title" font-size="23">API Gateway</text>
+        <text x="800" y="250" text-anchor="middle" class="box-sub" font-size="17">FastAPI + Uvicorn</text>
+      </g>
+      <line x1="800" y1="282" x2="800" y2="378" stroke="currentColor" stroke-width="1.8" marker-end="url(#arrow)"/>
+      <text x="815" y="335" class="arrow-label" font-size="18">LangGraph 파이프라인 실행</text>
+
+      <!-- ============ 3a. RAG PIPELINE ============ -->
+      <text x="120" y="368" class="section-label" font-size="18" fill="var(--rag-a)">③ 처리 계층</text>
+      <g>
+        <rect x="120" y="380" width="420" height="350" rx="12" fill="var(--rag-bg)" stroke="var(--rag-a)" stroke-width="1.6"/>
+        <text x="330" y="408" text-anchor="middle" class="box-title" font-size="21">RAG 파이프라인</text>
+
+        <rect x="150" y="445" width="360" height="77" rx="10" fill="var(--surface)" stroke="var(--rag-a)" stroke-width="1.3"/>
+        <text x="330" y="470" text-anchor="middle" class="box-title" font-size="18">Hybrid Embedder</text>
+        <text x="330" y="492" text-anchor="middle" class="box-sub" font-size="17">fastembed(dense) + BM25(sparse)</text>
+
+        <line x1="330" y1="522" x2="330" y2="543" stroke="currentColor" stroke-width="1.4" marker-end="url(#arrow)"/>
+
+        <rect x="150" y="545" width="360" height="156" rx="10" fill="var(--surface)" stroke="var(--rag-a)" stroke-width="1.3"/>
+        <text x="330" y="570" text-anchor="middle" class="box-title" font-size="18">Qdrant · :6333</text>
+        <rect x="165" y="583" width="330" height="50" rx="6" fill="var(--rag-bg)" stroke="var(--rag-a)" stroke-width="1"/>
+        <text x="330" y="601" text-anchor="middle" class="chip-text" font-size="17">schema_&lt;domain&gt;</text>
+        <text x="330" y="621" text-anchor="middle" class="box-sub" font-size="17">테이블/컬럼 스키마 임베딩</text>
+        <rect x="165" y="639" width="330" height="50" rx="6" fill="var(--rag-bg)" stroke="var(--rag-a)" stroke-width="1"/>
+        <text x="330" y="657" text-anchor="middle" class="chip-text" font-size="17">sql_knowledge_&lt;domain&gt;</text>
+        <text x="330" y="677" text-anchor="middle" class="box-sub" font-size="17">few-shot 예시 임베딩</text>
+      </g>
+
+      <!-- ============ 3b. ORCHESTRATOR ============ -->
+      <text x="580" y="368" class="section-label" font-size="18" fill="var(--orch-a)">Agent Orchestrator</text>
+      <g>
+        <rect x="580" y="380" width="440" height="746" rx="12" fill="var(--orch-bg)" stroke="var(--orch-a)" stroke-width="1.8"/>
+        <text x="800" y="402" text-anchor="middle" class="box-title" font-size="20">Agent Orchestrator</text>
+        <text x="800" y="428" text-anchor="middle" class="box-sub" font-size="17">— LangGraph StateGraph</text>
+
+        <!-- nodes -->
+        <rect x="640" y="450" width="320" height="70" rx="9" fill="var(--surface)" stroke="var(--orch-a)" stroke-width="1.4"/>
+        <text x="800" y="490" text-anchor="middle" class="box-title" font-size="19">intent</text>
+
+        <rect x="640" y="540" width="320" height="70" rx="9" fill="var(--surface)" stroke="var(--orch-a)" stroke-width="1.4"/>
+        <text x="800" y="580" text-anchor="middle" class="box-title" font-size="19">schema_linking</text>
+
+        <rect x="640" y="630" width="320" height="70" rx="9" fill="var(--orch-bg-2)" stroke="var(--orch-a)" stroke-width="1.6" stroke-dasharray="7 4"/>
+        <text x="800" y="670" text-anchor="middle" class="box-title" font-size="19">schema_review (HITL)</text>
+
+        <rect x="640" y="720" width="320" height="72" rx="9" fill="var(--surface)" stroke="var(--orch-a)" stroke-width="1.4"/>
+        <text x="800" y="750" text-anchor="middle" class="box-title" font-size="19">sql_generation</text>
+        <text x="800" y="770" text-anchor="middle" class="box-sub" font-size="17">aggregate · cohort · list_type</text>
+
+        <rect x="640" y="812" width="320" height="70" rx="9" fill="var(--orch-bg-2)" stroke="var(--orch-a)" stroke-width="1.6" stroke-dasharray="7 4"/>
+        <text x="800" y="852" text-anchor="middle" class="box-title" font-size="19">sql_review (HITL)</text>
+
+        <rect x="640" y="902" width="320" height="84" rx="9" fill="var(--surface)" stroke="var(--orch-a)" stroke-width="1.4"/>
+        <text x="800" y="932" text-anchor="middle" class="box-title" font-size="19">validation</text>
+        <text x="800" y="952" text-anchor="middle" class="box-sub" font-size="17">sqlglot · join ·</text>
+        <text x="800" y="972" text-anchor="middle" class="box-sub" font-size="17">citation · value-anchor</text>
+
+        <rect x="640" y="1006" width="320" height="70" rx="9" fill="var(--surface)" stroke="var(--orch-a)" stroke-width="1.4"/>
+        <text x="800" y="1046" text-anchor="middle" class="box-title" font-size="19">execution</text>
+
+        <!-- sequential arrows -->
+        <line x1="800" y1="520" x2="800" y2="538" stroke="currentColor" stroke-width="1.6" marker-end="url(#arrow)"/>
+        <line x1="800" y1="610" x2="800" y2="628" stroke="currentColor" stroke-width="1.6" marker-end="url(#arrow)"/>
+        <line x1="800" y1="700" x2="800" y2="718" stroke="currentColor" stroke-width="1.6" marker-end="url(#arrow)"/>
+        <line x1="800" y1="792" x2="800" y2="810" stroke="currentColor" stroke-width="1.6" marker-end="url(#arrow)"/>
+        <line x1="800" y1="882" x2="800" y2="900" stroke="currentColor" stroke-width="1.6" marker-end="url(#arrow)"/>
+        <line x1="800" y1="986" x2="800" y2="1004" stroke="currentColor" stroke-width="1.6" marker-end="url(#arrow)"/>
+
+        <!-- retry loop (left) -->
+        <path d="M 640 996 C 598 996 598 755 638 755" fill="none" stroke="var(--orch-a)" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#arrow)"/>
+        <text x="573" y="855" text-anchor="end" class="arrow-label" font-size="18" fill="var(--orch-a)">retry</text>
+        <text x="573" y="873" text-anchor="end" class="arrow-label" font-size="16">review off ·</text>
+        <text x="573" y="891" text-anchor="end" class="arrow-label" font-size="16">실패 시 재생성</text>
+
+        <!-- review loop (right) -->
+        <path d="M 960 996 C 1002 996 1002 847 962 847" fill="none" stroke="var(--orch-a)" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#arrow)"/>
+        <text x="1008" y="908" text-anchor="start" class="arrow-label" font-size="18" fill="var(--orch-a)">human review</text>
+        <text x="1008" y="922" text-anchor="start" class="arrow-label" font-size="16">review on · 실패 시 재검토</text>
+      </g>
+
+      <!-- ============ 3c. LLM GATEWAY ============ -->
+      <text x="1060" y="368" class="section-label" font-size="18" fill="var(--llm-a)">LLM Gateway</text>
+      <g>
+        <rect x="1060" y="380" width="420" height="369" rx="12" fill="var(--llm-bg)" stroke="var(--llm-a)" stroke-width="1.6"/>
+        <text x="1270" y="408" text-anchor="middle" class="box-title" font-size="21">LLM Gateway</text>
+
+        <rect x="1090" y="460" width="360" height="82" rx="10" fill="var(--surface)" stroke="var(--llm-a)" stroke-width="1.3"/>
+        <text x="1270" y="484" text-anchor="middle" class="box-title" font-size="18">Router</text>
+        <text x="1270" y="505" text-anchor="middle" class="box-sub" font-size="17">난이도 기반 분기</text>
+        <text x="1270" y="525" text-anchor="middle" class="box-sub" font-size="17">(easy/medium → LOW, hard → HIGH)</text>
+
+        <line x1="1180" y1="542" x2="1180" y2="563" stroke="currentColor" stroke-width="1.3" marker-end="url(#arrow)"/>
+        <line x1="1360" y1="542" x2="1360" y2="563" stroke="currentColor" stroke-width="1.3" marker-end="url(#arrow)"/>
+
+        <rect x="1090" y="565" width="170" height="57" rx="8" fill="var(--surface)" stroke="var(--llm-a)" stroke-width="1.2"/>
+        <text x="1175" y="587" text-anchor="middle" class="box-title" font-size="18">LOW</text>
+        <text x="1175" y="605" text-anchor="middle" class="box-sub" font-size="17">gpt-4.1-mini</text>
+
+        <rect x="1280" y="565" width="170" height="57" rx="8" fill="var(--surface)" stroke="var(--llm-a)" stroke-width="1.2"/>
+        <text x="1365" y="587" text-anchor="middle" class="box-title" font-size="18">HIGH</text>
+        <text x="1365" y="605" text-anchor="middle" class="box-sub" font-size="17">gpt-5</text>
+
+        <rect x="1090" y="635" width="170" height="52" rx="8" fill="var(--surface)" stroke="var(--llm-a)" stroke-width="1.1" stroke-dasharray="4 3"/>
+        <text x="1175" y="656" text-anchor="middle" class="box-title" font-size="17">Eval Judge</text>
+        <text x="1175" y="676" text-anchor="middle" class="box-sub" font-size="17">gpt-4o-mini</text>
+
+        <rect x="1280" y="635" width="170" height="74" rx="8" fill="var(--surface)" stroke="var(--llm-a)" stroke-width="1.1" stroke-dasharray="4 3"/>
+        <text x="1365" y="656" text-anchor="middle" class="box-title" font-size="17">Embedding</text>
+        <text x="1365" y="676" text-anchor="middle" class="box-sub" font-size="17">text-embedding</text>
+        <text x="1365" y="696" text-anchor="middle" class="box-sub" font-size="17">-3-small</text>
+
+        <text x="1270" y="729" text-anchor="middle" class="box-sub" font-size="17" font-style="italic">TokenCountingLLM — 모든 호출 비용 계측</text>
+      </g>
+
+      <!-- connectors: RAG <-> Orchestrator, Orchestrator <-> LLM -->
+      <line x1="540" y1="665" x2="638" y2="665" stroke="currentColor" stroke-width="1.6" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+      <text x="589" y="650" text-anchor="middle" class="arrow-label" font-size="17">하이브리드 검색</text>
+
+      <line x1="1018" y1="600" x2="1058" y2="600" stroke="currentColor" stroke-width="1.6" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+      <text x="1038" y="585" text-anchor="middle" class="arrow-label" font-size="16.5">difficulty-routed 호출</text>
+
+      <!-- ============ 4. DATA LAYER ============ -->
+      <text x="120" y="1408" class="section-label" font-size="18" fill="var(--data-a)">④ 데이터 계층</text>
+      <g>
+        <rect x="120" y="1420" width="660" height="142" rx="12" fill="var(--data-bg)" stroke="var(--data-a)" stroke-width="1.6"/>
+        <text x="450" y="1475" text-anchor="middle" class="box-title" font-size="22">Target Domain (Postgres)</text>
+        <text x="450" y="1502" text-anchor="middle" class="box-sub" font-size="17">poc_prostate 스키마 — schema introspection + 실제 SELECT 실행</text>
+      </g>
+      <g>
+        <rect x="820" y="1420" width="660" height="142" rx="12" fill="var(--data-bg)" stroke="var(--data-a)" stroke-width="1.6"/>
+        <text x="1150" y="1475" text-anchor="middle" class="box-title" font-size="22">App DB (Postgres)</text>
+        <text x="1150" y="1502" text-anchor="middle" class="box-sub" font-size="17">run 레지스트리 · LangGraph 체크포인트 (PostgresSaver)</text>
+      </g>
+
+      <!-- data layer arrows -->
+      <path d="M 730 1126 L 470 1418" fill="none" stroke="currentColor" stroke-width="1.6" marker-end="url(#arrow)"/>
+      <text x="600" y="1272" text-anchor="middle" class="arrow-label" font-size="18">execution: SELECT 실행</text>
+
+      <path d="M 900 1126 L 1130 1418" fill="none" stroke="currentColor" stroke-width="1.6" marker-end="url(#arrow)"/>
+      <text x="1015" y="1272" text-anchor="middle" class="arrow-label" font-size="18">checkpoint 저장 · run 상태</text>
+
+      <!-- schema_indexer: target PG -> RAG (introspection, upward) -->
+      <path d="M 300 1420 L 300 732" fill="none" stroke="var(--rag-a)" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#arrow)"/>
+      <text x="280" y="1070" text-anchor="end" class="arrow-label" font-size="17" fill="var(--rag-a)">스키마 introspection</text>
+    </svg>
+  </div>
+</div>
+
+<div class="legend">
+  <div class="legend-item"><span class="swatch"></span> 주 요청 흐름 (실선 화살표)</div>
+  <div class="legend-item"><span class="swatch node"></span> HITL interrupt 노드 (점선 테두리)</div>
+  <div class="legend-item"><span class="swatch curve"></span> 재시도 / 사람 재검토 루프 (곡선 점선)</div>
+  <div class="legend-item"><span class="swatch dashed" style="border-color:var(--rag-a)"></span> schema_indexer 스키마 introspection</div>
+  <div class="legend-item">↔ 양방향 화살표 = 요청 · 응답 (RAG 검색 / LLM 호출)</div>
+</div>
+
+</body>
+</html>

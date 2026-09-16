@@ -29,7 +29,6 @@ export function RunListPanel({
       <div className="history-list-head">
         <div className="history-list-head-row">
           <h2>Run 목록</h2>
-          <span className="panel-count">{runs.length}건{hasMore ? '+' : ''}</span>
           <div className="header-spacer" />
           <span className="panel-endpoint">최신순 · GET /runs</span>
         </div>

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { domainApi, type DomainStatus, type TableSummary, type TableDetail } from './api/domainClient'
 import { fewshotApi } from './api/fewshotClient'
 import { CostDashboard } from './components/cost/CostDashboard'
+import { DomainNotesModal } from './components/domain/DomainNotesModal'
 import { EvalTab } from './components/eval/EvalTab'
 import { FewShotTab } from './components/fewshot/FewShotTab'
 import { HistoryTab } from './components/history/HistoryTab'
@@ -319,6 +320,8 @@ function App() {
   // (안 비우면 나중에 사이드바로 히스토리에 들어갈 때도 계속 이 run이 다시 선택돼버린다).
   const [pendingHistoryRunId, setPendingHistoryRunId] = useState<string | null>(null)
 
+  const [notesModalOpen, setNotesModalOpen] = useState(false)
+
   const loadStatus = useCallback(() => {
     setPhase('loading')
     setStatusError(null)
@@ -400,6 +403,8 @@ function App() {
             <header className="page-header">
               <h1>도메인 관리</h1>
               <p className="subtitle">연결된 DB의 테이블과 컬럼 메타데이터를 확인합니다.</p>
+              <div className="header-spacer" />
+              <button className="btn-secondary" onClick={() => setNotesModalOpen(true)}>도메인 노트</button>
             </header>
 
             <div className="content">
@@ -416,6 +421,10 @@ function App() {
                 <TableDetailPanel detail={detail} loading={detailLoading} />
               </div>
             </div>
+
+            {notesModalOpen && (
+              <DomainNotesModal tables={tables} onClose={() => setNotesModalOpen(false)} />
+            )}
           </>
         )}
       </main>

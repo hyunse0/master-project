@@ -7,6 +7,7 @@ import threading
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 
 import eval.execution_accuracy as execution_accuracy_eval
 import eval.self_correction_ablation as self_correction_eval
@@ -80,34 +81,65 @@ def _rows(sql: str, params: dict) -> list[dict]:
         conn.close()
 
 
+def _latest_batch_filter(experiment: str, domain: str | None) -> tuple[str, str | None]:
+    """experiment 태그로 쌓인 run_metrics 중 가장 최근 batch_id(execution_accuracy.py의
+    run() 1회 호출 단위)를 찾아 SQL WHERE 조각으로 돌려준다. baseline부터 지금까지 쌓인
+    모든 실행(코드가 여러 번 바뀌는 동안의 기록)이 누적 집계되는 걸 막고 "지금 코드 상태"의
+    최신 실행 1회만 보여주기 위함 — 과거 전체 이력은 docs/kpi-experiment-log.md가 실험
+    단위로 따로 추적한다. batch_id가 없는 옛 기록만 있으면(이 필드 도입 이전 마지막 실행)
+    예전처럼 누적 전체로 폴백한다."""
+    rows = _rows(
+        """
+        SELECT tags->>'batch_id' AS batch_id
+        FROM run_metrics
+        WHERE tags->>'experiment' = %(experiment)s
+          AND tags->>'batch_id' IS NOT NULL
+          AND (%(domain)s::text IS NULL OR domain = %(domain)s)
+        ORDER BY created_at DESC LIMIT 1
+        """,
+        {"experiment": experiment, "domain": domain},
+    )
+    batch_id = rows[0]["batch_id"] if rows else None
+    condition = "tags->>'batch_id' = %(batch_id)s" if batch_id else "TRUE"
+    return condition, batch_id
+
+
 @router.get("/eval/execution-accuracy")
 def get_execution_accuracy(domain: str | None = None) -> dict:
     """execution_accuracy.py가 남긴 결과를 난이도별로 묶어 반환. golden_set.json이 아직
     없는 도메인은 experiment='execution_accuracy' 행 자체가 없어 groups가 빈 배열로 온다
-    — 프론트는 이걸 "골든셋 없음" 상태로 표시."""
+    — 프론트는 이걸 "골든셋 없음" 상태로 표시.
+
+    실험 태그로 남는 이력은 baseline부터 지금까지 쌓인 모든 실행(코드가 여러 번 바뀌는 동안의
+    기록)을 포함하므로, tags->>'batch_id'(execution_accuracy.py의 run() 1회 호출 단위, 없으면
+    옛 기록)로 최신 실행 1회만 걸러 "지금 코드 상태"의 정답률을 보여준다 — 과거 전체 이력은
+    docs/kpi-experiment-log.md가 실험 단위로 따로 추적한다."""
+    batch_filter, latest_batch_id = _latest_batch_filter("execution_accuracy", domain)
     groups = _rows(
-        """
+        f"""
         SELECT tags->>'difficulty' AS difficulty,
                COUNT(*) AS total,
                SUM((tags->>'golden_correct' = 'true')::int) AS correct
         FROM run_metrics
         WHERE tags->>'experiment' = 'execution_accuracy'
           AND (%(domain)s::text IS NULL OR domain = %(domain)s)
+          AND {batch_filter}
         GROUP BY difficulty ORDER BY difficulty
         """,
-        {"domain": domain},
+        {"domain": domain, "batch_id": latest_batch_id},
     )
     for g in groups:
         g["accuracy"] = round(g["correct"] / g["total"], 4) if g["total"] else 0.0
 
     last_run_rows = _rows(
-        """
+        f"""
         SELECT MAX(created_at) AS last_run_at
         FROM run_metrics
         WHERE tags->>'experiment' = 'execution_accuracy'
           AND (%(domain)s::text IS NULL OR domain = %(domain)s)
+          AND {batch_filter}
         """,
-        {"domain": domain},
+        {"domain": domain, "batch_id": latest_batch_id},
     )
 
     total = sum(g["total"] for g in groups)
@@ -128,8 +160,9 @@ def get_execution_accuracy(domain: str | None = None) -> dict:
 def get_schema_mapping_accuracy(domain: str | None = None) -> dict:
     """schema_mapping_accuracy.py가 남긴 질문별 precision/recall/f1의 평균. 난이도별
     breakdown도 함께 — 어려운 질문일수록 스키마 링킹이 흔들리는지 보기 위함."""
+    batch_filter, batch_id = _latest_batch_filter("schema_mapping_accuracy", domain)
     overall_rows = _rows(
-        """
+        f"""
         SELECT COUNT(*) AS total,
                AVG((tags->>'precision')::float) AS precision,
                AVG((tags->>'recall')::float)    AS recall,
@@ -137,11 +170,12 @@ def get_schema_mapping_accuracy(domain: str | None = None) -> dict:
         FROM run_metrics
         WHERE tags->>'experiment' = 'schema_mapping_accuracy'
           AND (%(domain)s::text IS NULL OR domain = %(domain)s)
+          AND {batch_filter}
         """,
-        {"domain": domain},
+        {"domain": domain, "batch_id": batch_id},
     )
     groups = _rows(
-        """
+        f"""
         SELECT tags->>'difficulty' AS difficulty,
                COUNT(*) AS total,
                AVG((tags->>'precision')::float) AS precision,
@@ -150,9 +184,10 @@ def get_schema_mapping_accuracy(domain: str | None = None) -> dict:
         FROM run_metrics
         WHERE tags->>'experiment' = 'schema_mapping_accuracy'
           AND (%(domain)s::text IS NULL OR domain = %(domain)s)
+          AND {batch_filter}
         GROUP BY difficulty ORDER BY difficulty
         """,
-        {"domain": domain},
+        {"domain": domain, "batch_id": batch_id},
     )
     return {"domain": domain, "overall": overall_rows[0] if overall_rows else None, "groups": groups}
 
@@ -160,21 +195,23 @@ def get_schema_mapping_accuracy(domain: str | None = None) -> dict:
 @router.get("/eval/faithfulness")
 def get_faithfulness(domain: str | None = None, limit: int = 20) -> dict:
     """condition_summary_faithfulness.py 결과 — 전체 비율 + 실패 사례 목록(최신순)."""
+    batch_filter, batch_id = _latest_batch_filter("condition_summary_faithfulness", domain)
     overall_rows = _rows(
-        """
+        f"""
         SELECT COUNT(*) AS total,
                SUM((tags->>'faithful' = 'true')::int) AS faithful
         FROM run_metrics
         WHERE tags->>'experiment' = 'condition_summary_faithfulness'
           AND (%(domain)s::text IS NULL OR domain = %(domain)s)
+          AND {batch_filter}
         """,
-        {"domain": domain},
+        {"domain": domain, "batch_id": batch_id},
     )
     overall = overall_rows[0] if overall_rows else {"total": 0, "faithful": 0}
     overall["ratio"] = round(overall["faithful"] / overall["total"], 4) if overall["total"] else None
 
     failures = _rows(
-        """
+        f"""
         SELECT run_id, question,
                tags->>'reason'  AS reason,
                tags->>'summary' AS summary,
@@ -185,10 +222,11 @@ def get_faithfulness(domain: str | None = None, limit: int = 20) -> dict:
         WHERE tags->>'experiment' = 'condition_summary_faithfulness'
           AND tags->>'faithful' = 'false'
           AND (%(domain)s::text IS NULL OR domain = %(domain)s)
+          AND {batch_filter}
         ORDER BY created_at DESC
         LIMIT %(limit)s
         """,
-        {"domain": domain, "limit": limit},
+        {"domain": domain, "limit": limit, "batch_id": batch_id},
     )
     return {"domain": domain, "overall": overall, "failures": failures}
 
@@ -378,3 +416,28 @@ def get_golden_set(domain: str | None = None) -> dict:
                 },
             })
     return {"domain": domain, "cases": cases}
+
+
+class GoldenSetAddRequest(BaseModel):
+    domain: str
+    question: str
+    expected_sql: str
+
+
+@router.post("/eval/golden-set")
+def add_golden_set_case(body: GoldenSetAddRequest) -> dict:
+    """결과 카드의 'Golden Set에 추가' 버튼용 — 지금 화면에 떠 있는 질문+실행된 SQL을
+    golden_set.json에 새 대화(1턴)로 append한다. 이미 같은 질문이 있으면 중복 추가하지
+    않고 그대로 알려준다(같은 질문을 여러 번 눌러도 안전하게)."""
+    domain_cfg = get_domain(body.domain)
+    path = domain_cfg.golden_set_path
+    golden = json.loads(path.read_text()) if path.is_file() else []
+
+    for conv in golden:
+        for item in conv["turns"]:
+            if item["question"] == body.question:
+                return {"status": "exists"}
+
+    golden.append({"turns": [{"question": body.question, "expected_sql": body.expected_sql}]})
+    path.write_text(json.dumps(golden, ensure_ascii=False, indent=2) + "\n")
+    return {"status": "added"}

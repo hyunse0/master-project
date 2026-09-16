@@ -24,7 +24,7 @@ from app.domain.loader import get_domain
 from app.graph.build import build_graph
 from app.graph.checkpointer import get_checkpointer
 from app.graph.conversation_context import build_prior_turns, next_turn_meta
-from app.observability import cost_tracker, run_logger
+from app.observability import cost_tracker, run_logger, run_progress
 from app.observability.run_log_capture import capture_run_logs
 from app.runs import run_manager
 
@@ -64,6 +64,7 @@ def _mark_crashed(
 ) -> None:
     """graph.invoke()가 예외로 죽었을 때 registry가 'running'에 영원히 멈춰있지 않도록
     최소한의 error 스냅샷을 남긴다 — GET /runs/{id}가 그대로 실패 사실을 보여줄 수 있게."""
+    run_progress.clear(run_id)
     run_manager.save_snapshot(
         run_id,
         "error",
@@ -100,6 +101,7 @@ def _finalize(
     turn_no: int = 1,
     parent_run_id: str | None = None,
 ) -> dict:
+    run_progress.clear(run_id)
     snapshot = graph.get_state(_thread_config(run_id))
     values = snapshot.values
 
@@ -183,6 +185,11 @@ class RunRequest(BaseModel):
     conversation_id: str | None = None
     # true면 schema_linking이 새로 검색하지 않고 직전 턴의 확정 스키마를 재사용한다(F단계).
     carry_schema: bool = False
+    # POST /runs는 동기 호출이라 응답이 오기 전엔 서버가 만든 run_id를 클라이언트가 알 수
+    # 없다 — 그래서 클라이언트가 미리 발급한 UUID를 여기로 보내면 그걸 그대로 쓴다. 이렇게
+    # 해야 진행 중에도 GET /runs/{id}/progress를 폴링할 수 있다(그렇지 않으면 응답을 받을
+    # 때까지 폴링할 run_id 자체가 없다). 생략하면 지금까지처럼 서버가 새로 발급한다.
+    run_id: str | None = None
 
 
 class ResumeRequest(BaseModel):
@@ -203,6 +210,7 @@ def execute_run(
     *,
     conversation_id: str | None = None,
     carry_schema: bool = False,
+    run_id: str | None = None,
 ) -> dict:
     """도메인 resolve → graph 자동 실행 → 최종 상태 반환.
 
@@ -228,7 +236,7 @@ def execute_run(
     turn_no, parent_run_id = next_turn_meta(conversation_id)
     prior_turns = build_prior_turns(conversation_id) if turn_no > 1 else []
 
-    run_id = str(uuid.uuid4())
+    run_id = run_id or str(uuid.uuid4())
     review_config = review_config or _DEFAULT_REVIEW_CONFIG
     tags = _DEFAULT_TAGS
 
@@ -239,6 +247,7 @@ def execute_run(
 
     t0 = time.time()
     with capture_run_logs() as log_buffer:
+        run_progress.set_log_buffer(run_id, log_buffer)
         try:
             graph.invoke(
                 {
@@ -274,7 +283,7 @@ def create_run(body: RunRequest) -> dict:
     try:
         return execute_run(
             body.question, body.domain, body.review_config,
-            conversation_id=body.conversation_id, carry_schema=body.carry_schema,
+            conversation_id=body.conversation_id, carry_schema=body.carry_schema, run_id=body.run_id,
         )
     except ValueError as e:
         raise HTTPException(400, str(e))
@@ -299,6 +308,22 @@ def get_run(run_id: str) -> dict:
     if row is None:
         raise HTTPException(404, "run을 찾을 수 없습니다")
     return row["state_snapshot"]
+
+
+@router.get("/{run_id}/progress")
+def get_run_progress(run_id: str) -> dict:
+    """POST /runs·resume이 응답하기 전까지 지금 어느 노드가 도는지, 지금까지 어떤 로그가
+    찍혔는지 보여주는 보조 조회용 — 동기 응답 자체의 계약은 바꾸지 않고, 그 요청이 떠
+    있는 동안 프론트가 별도로 폴링해서 스테이지 레일·실행 로그 패널을 실시간으로 갱신하는
+    데 쓴다(run_progress.py 참고). resume 라운드는 직전 라운드까지의 로그가 이미
+    run_manager에 저장돼 있으므로, 거기에 지금 라운드에서 새로 쌓인 로그(run_progress의
+    라이브 버퍼)를 이어 붙인다 — resume_run의 최종 응답이 만드는 logs와 동일한 조립 방식."""
+    row = run_manager.get(run_id)
+    prior_logs = ((row["state_snapshot"] or {}).get("logs") or []) if row else []
+    return {
+        "current_node": run_progress.get_current_node(run_id),
+        "logs": prior_logs + run_progress.get_logs(run_id),
+    }
 
 
 @router.post("/{run_id}/resume")
@@ -339,6 +364,7 @@ def resume_run(run_id: str, body: ResumeRequest) -> dict:
 
     t0 = time.time()
     with capture_run_logs() as log_buffer:
+        run_progress.set_log_buffer(run_id, log_buffer)
         try:
             graph.invoke(Command(resume=resume_value), config=_thread_config(run_id))
         except Exception as e:

@@ -83,16 +83,75 @@ _RETRY_GUIDE: dict[str, str] = {
 }
 
 
-def load_prompt_fragments(prompt_fragments_path: Path) -> str:
-    """domains/<domain>/prompt_fragments.yaml의 notes를 읽는다. 파일 없으면 빈 문자열."""
+def _load_yaml(prompt_fragments_path: Path) -> dict:
     if not prompt_fragments_path.is_file():
-        return ""
+        return {}
     try:
-        data = yaml.safe_load(prompt_fragments_path.read_text()) or {}
-        return (data.get("notes") or "").strip()
+        return yaml.safe_load(prompt_fragments_path.read_text()) or {}
     except Exception as e:
         logger.warning("prompt_fragments.yaml 로드 실패 (%s): %s", prompt_fragments_path, e)
+        return {}
+
+
+def load_general_notes(prompt_fragments_path: Path, domain_name: str | None = None) -> str:
+    """도메인 전체에 적용되는 일반 참고사항(특정 테이블에 종속되지 않는 규칙)을 읽는다.
+
+    소스 두 곳을 합친다 — ① `prompt_fragments.yaml`의 `notes:`(개발 시점에 파일로 미리
+    시딩해두는 기본값), ② app-db `domain_notes`(table_name IS NULL, 화면 "도메인 노트"
+    팝업에서 사용자가 런타임에 등록하는 값). domain_name을 안 주면(CLI/eval 등 app-db 접근이
+    불필요한 호출부) ②는 건너뛴다.
+    """
+    parts: list[str] = []
+    yaml_notes = (_load_yaml(prompt_fragments_path).get("notes") or "").strip()
+    if yaml_notes:
+        parts.append(yaml_notes)
+
+    if domain_name:
+        from app.domain.notes_store import list_notes  # 지연 임포트 — app.sql -> app.domain 순환 방지
+
+        try:
+            for row in list_notes(domain_name):
+                if row["table_name"] is None and row["note"].strip():
+                    parts.append(f"- {row['note'].strip()}")
+        except Exception as e:
+            logger.warning("domain_notes(app-db) 로드 실패 (domain=%s): %s", domain_name, e)
+
+    return "\n".join(parts).strip()
+
+
+def load_table_notes(prompt_fragments_path: Path, domain_name: str | None = None) -> dict[str, str]:
+    """테이블별 참고사항을 읽는다 — {테이블명: 노트} dict.
+
+    DB의 실제 COMMENT ON TABLE/COLUMN이 너무 일반적이라 스키마 임베딩(schema_indexer.py)만으로는
+    비슷한 이름의 테이블을 구분 못 하는 경우, 또는 SQL 생성이 그 테이블의 코드값을 몰라 틀리는
+    경우를 보완한다(EXP-017/EXP-018). 이 dict는 두 소비처 모두에 쓰인다 — schema_indexer.py가
+    임베딩 텍스트에 덧붙이고, `render_table_notes_for_prompt()`가 SQL 생성 프롬프트용으로
+    묶어준다. `load_general_notes`와 마찬가지로 YAML(개발 시점 기본값)과 app-db(사용자 등록,
+    table_name IS NOT NULL)를 합친다 — 같은 테이블에 둘 다 있으면 app-db 값이 우선한다.
+    """
+    hints: dict[str, str] = {
+        k: v.strip() for k, v in (_load_yaml(prompt_fragments_path).get("table_retrieval_hints") or {}).items() if v
+    }
+
+    if domain_name:
+        from app.domain.notes_store import list_notes  # 지연 임포트 — app.sql -> app.domain 순환 방지
+
+        try:
+            for row in list_notes(domain_name):
+                if row["table_name"] and row["note"].strip():
+                    hints[row["table_name"]] = row["note"].strip()
+        except Exception as e:
+            logger.warning("domain_notes(app-db) 로드 실패 (domain=%s): %s", domain_name, e)
+
+    return hints
+
+
+def render_table_notes_for_prompt(table_notes: dict[str, str]) -> str:
+    """테이블별 노트를 SQL 생성/schema_review 프롬프트에 넣을 텍스트 블록으로 렌더링한다."""
+    if not table_notes:
         return ""
+    lines = [f"- {table}: {note}" for table, note in sorted(table_notes.items())]
+    return "\n".join(lines)
 
 
 class SqlPromptBuilder:

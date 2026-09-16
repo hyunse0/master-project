@@ -1,3 +1,5 @@
+import { useState } from 'react'
+import { fewshotApi } from '../../api/fewshotClient'
 import type { RunResult } from '../../types'
 import { isChartable, ResultChart } from './ResultChart'
 
@@ -7,10 +9,60 @@ function extractSummaryText(markdown: string | null): string {
   return match ? match[1].trim() : markdown.trim()
 }
 
+// CSV 필드 안에 쉼표/따옴표/줄바꿈이 있으면 RFC 4180대로 큰따옴표로 감싸고 내부 따옴표는 2개로.
+function csvField(value: unknown): string {
+  const s = String(value ?? '')
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+}
+
+function downloadCsv(columns: string[], rows: Record<string, unknown>[], filename: string): void {
+  const lines = [
+    columns.map(csvField).join(','),
+    ...rows.map((row) => columns.map((c) => csvField(row[c])).join(',')),
+  ]
+  // 엑셀에서 한글이 깨지지 않도록 UTF-8 BOM을 붙인다.
+  const blob = new Blob(['﻿', lines.join('\r\n')], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+type FewShotAddState = 'idle' | 'saving' | 'added' | 'exists' | 'error'
+
 export function ResultCard({ result }: { result: RunResult }) {
   const columns = result.columns
   const rows = result.rows
   const displayCount = Math.min(20, rows.length)
+  const [fewShotState, setFewShotState] = useState<FewShotAddState>('idle')
+
+  const handleExportCsv = () => {
+    downloadCsv(columns, rows, `result_${result.run_id.slice(0, 8)}.csv`)
+  }
+
+  // Golden Set은 정답률 평가(Golden Set 평가 탭)에만 쓰이고 실제 에이전트에는 반영되지 않는다
+  // — 지금 이 결과를 다음 질문부터 실제로 참고하게 하려면 few_shot.json에 채택해 Qdrant에
+  // 재임베딩(Few-shot 예제 관리 탭의 "Qdrant에 반영")해야 한다.
+  const handleAddToFewShot = async () => {
+    if (!result.sql) return
+    setFewShotState('saving')
+    try {
+      const r = await fewshotApi.add(result.domain, result.run_id)
+      setFewShotState(r.status)
+    } catch {
+      setFewShotState('error')
+    }
+  }
+
+  const fewShotLabel: Record<FewShotAddState, string> = {
+    idle: 'Few-shot에 추가',
+    saving: '추가 중…',
+    added: '추가됨',
+    exists: '이미 있음',
+    error: '추가 실패 — 다시 시도',
+  }
 
   return (
     <section className="result-card">
@@ -72,11 +124,15 @@ export function ResultCard({ result }: { result: RunResult }) {
         )}
 
         <div className="result-card-footer">
-          <button className="btn-secondary" disabled title="구현 예정">
+          <button className="btn-secondary" onClick={handleExportCsv} disabled={rows.length === 0}>
             CSV 내보내기
           </button>
-          <button className="btn-secondary" disabled title="구현 예정">
-            Golden Set에 추가
+          <button
+            className="btn-secondary"
+            onClick={handleAddToFewShot}
+            disabled={!result.sql || fewShotState === 'saving' || fewShotState === 'added' || fewShotState === 'exists'}
+          >
+            {fewShotLabel[fewShotState]}
           </button>
         </div>
       </div>

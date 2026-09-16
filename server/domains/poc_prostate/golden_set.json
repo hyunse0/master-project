@@ -206,5 +206,94 @@
         "expected_sql": "SELECT pi.dis_stage, COUNT(DISTINCT po.s_patno) AS patient_count FROM poc.poc_prostate_op po JOIN poc.poc_prostate_patient_info pi ON po.s_patno = pi.s_patno WHERE po.emrcy_op_yn = 'Y' GROUP BY pi.dis_stage ORDER BY pi.dis_stage"
       }
     ]
+  },
+  {
+    "note": "easy 표본 보강 — 단일 테이블 단순 집계(patient_info)",
+    "turns": [
+      {
+        "question": "병기(dis_stage)별 환자 수를 알려줘",
+        "expected_sql": "SELECT dis_stage, COUNT(DISTINCT s_patno) AS patient_count FROM poc.poc_prostate_patient_info GROUP BY dis_stage ORDER BY dis_stage"
+      }
+    ]
+  },
+  {
+    "note": "easy 표본 보강 — 단일 테이블 단순 집계(blood)",
+    "turns": [
+      {
+        "question": "PSA 검사를 받은 환자는 총 몇 명인가요?",
+        "expected_sql": "SELECT COUNT(DISTINCT s_patno) FROM poc.poc_prostate_blood WHERE ordr_cd = 'PSA001'"
+      }
+    ]
+  },
+  {
+    "note": "hard 표본 보강 — 3테이블 조인(blood/path/patient_info) + 복합 조건 3개(PSA 수치 + Grade Group + 병기, 병기를 출력 컬럼이 아니라 필터 조건으로 걸어 hard 분류 신호를 강화)",
+    "turns": [
+      {
+        "question": "PSA 수치가 4.0 이상이고 병리 검사에서 Gleason Grade Group이 4 이상이며 병기가 III기 이상인 환자를 보여줘",
+        "expected_sql": "SELECT DISTINCT pi.s_patno, pi.dis_stage FROM poc.poc_prostate_blood pb JOIN poc.poc_prostate_path pp ON pb.s_patno = pp.s_patno JOIN poc.poc_prostate_patient_info pi ON pb.s_patno = pi.s_patno WHERE pb.ordr_cd = 'PSA001' AND pb.mark_rslt_val::float >= 4.0 AND pp.grade_group::int >= 4 AND pi.dis_stage IN ('III', 'IV') ORDER BY pi.s_patno"
+      }
+    ]
+  },
+  {
+    "note": "hard 표본 보강 — 3테이블 조인(ooodmordr/op/patient_info), 원천 처방 테이블까지 필요한 조인 누락 취약 케이스",
+    "turns": [
+      {
+        "question": "호르몬 치료를 받았고 응급수술 이력도 있는 환자의 병기를 보여줘",
+        "expected_sql": "SELECT DISTINCT pi.s_patno, pi.dis_stage FROM poc.poc_ooodmordr od JOIN poc.poc_prostate_op po ON od.s_patno = po.s_patno JOIN poc.poc_prostate_patient_info pi ON od.s_patno = pi.s_patno WHERE od.ordr_cd IN ('ADT001', 'ADT002') AND po.emrcy_op_yn = 'Y' ORDER BY pi.s_patno"
+      }
+    ]
+  },
+  {
+    "note": "hard 표본 보강 — 3테이블 조인(ssnudexrt/patient_info/path) + OR 조건(골스캔/PET)",
+    "turns": [
+      {
+        "question": "전신골스캔 또는 PET에서 골전이가 의심됐고 병기가 III기 이상인 환자의 Gleason Grade Group을 함께 보여줘",
+        "expected_sql": "SELECT DISTINCT sn.s_patno, pi.dis_stage, pp.grade_group FROM poc.poc_ssnudexrt sn JOIN poc.poc_prostate_patient_info pi ON sn.s_patno = pi.s_patno JOIN poc.poc_prostate_path pp ON sn.s_patno = pp.s_patno WHERE sn.mark_rslt_val = 'Positive' AND pi.dis_stage IN ('III', 'IV') ORDER BY sn.s_patno"
+      }
+    ]
+  },
+  {
+    "note": "hard 표본 보강 — 3테이블 조인(sslrdexrt/path/patient_info) + 복합 조건 3개",
+    "turns": [
+      {
+        "question": "골반 MRI에서 양성 소견이 나왔고 Gleason Grade Group이 3 이상이며 다중암 여부가 있는 환자를 보여줘",
+        "expected_sql": "SELECT DISTINCT sr.s_patno FROM poc.poc_sslrdexrt sr JOIN poc.poc_prostate_path pp ON sr.s_patno = pp.s_patno JOIN poc.poc_prostate_patient_info pi ON sr.s_patno = pi.s_patno WHERE sr.exam_cd = 'MRI001' AND sr.mark_rslt_val = 'Positive' AND pp.grade_group::int >= 3 AND pi.multi_cancer_yn = 'Y' ORDER BY sr.s_patno"
+      }
+    ]
+  },
+  {
+    "note": "hard 표본 보강 — 3테이블 조인(op/ooodmordr/blood) + 복합 조건(로봇수술 + 호르몬치료 + PSA 임계값)",
+    "turns": [
+      {
+        "question": "로봇 수술을 받았고 호르몬 치료도 받았으며 PSA 수치가 10 이상인 환자는 몇 명인가요?",
+        "expected_sql": "SELECT COUNT(DISTINCT po.s_patno) FROM poc.poc_prostate_op po JOIN poc.poc_ooodmordr od ON po.s_patno = od.s_patno JOIN poc.poc_prostate_blood pb ON po.s_patno = pb.s_patno WHERE po.inhosp_op_eng_nm ILIKE '%robot%' AND od.ordr_cd IN ('ADT001', 'ADT002') AND pb.ordr_cd = 'PSA001' AND pb.mark_rslt_val::float >= 10"
+      }
+    ]
+  },
+  {
+    "turns": [
+      {
+        "question": "2023년 이후 로봇 수술을 받은 전립선암 환자 수를 Gleason 위험군별로 알려줘",
+        "expected_sql": "SELECT\n  poc.poc_prostate_path.grade_group AS gleason_risk_group,\n  COUNT(DISTINCT poc.poc_prostate_op.s_patno) AS patient_count\nFROM\n  poc.poc_prostate_op\nJOIN\n  poc.poc_prostate_path\n    ON poc.poc_prostate_op.s_patno = poc.poc_prostate_path.s_patno\n   AND TO_DATE(poc.poc_prostate_path.rslt_cnfm_dt, 'YYYYMMDD') <= TO_DATE(poc.poc_prostate_op.op_dt, 'YYYYMMDD')\nWHERE\n  poc.poc_prostate_op.op_dt IS NOT NULL\n  AND TO_DATE(poc.poc_prostate_op.op_dt, 'YYYYMMDD') >= DATE '2023-01-01'\n  AND poc.poc_prostate_op.inhosp_op_cd IN ('RAP001', 'RAP002')\nGROUP BY\n  poc.poc_prostate_path.grade_group\nORDER BY\n  patient_count DESC\nLIMIT 100"
+      }
+    ]
+  },
+  {
+    "note": "hard 표본 보강(2차) — 앞선 배치에서 4/5가 medium으로 분류된 것을 보완: 3테이블 조인(op/patient_info/path) + 복합 조건 3개",
+    "turns": [
+      {
+        "question": "로봇 수술을 받았고 병기가 III기 이상이며 Gleason Grade Group이 4 이상인 환자를 보여줘",
+        "expected_sql": "SELECT DISTINCT po.s_patno FROM poc.poc_prostate_op po JOIN poc.poc_prostate_patient_info pi ON po.s_patno = pi.s_patno JOIN poc.poc_prostate_path pp ON po.s_patno = pp.s_patno WHERE po.inhosp_op_eng_nm ILIKE '%robot%' AND pi.dis_stage IN ('III', 'IV') AND pp.grade_group::int >= 4 ORDER BY po.s_patno"
+      }
+    ]
+  },
+  {
+    "note": "hard 표본 보강(2차) — 3테이블 조인(sslrdexrt/path/blood) + 복합 조건 3개, patient_info를 안 거치도록 설계(스냅샷 컬럼 혼동 회피)",
+    "turns": [
+      {
+        "question": "골반 MRI에서 양성 소견이 나왔고 Gleason Grade Group이 3 이상이며 PSA 수치가 10 이상인 환자를 보여줘",
+        "expected_sql": "SELECT DISTINCT sr.s_patno FROM poc.poc_sslrdexrt sr JOIN poc.poc_prostate_path pp ON sr.s_patno = pp.s_patno JOIN poc.poc_prostate_blood pb ON sr.s_patno = pb.s_patno WHERE sr.exam_cd = 'MRI001' AND sr.mark_rslt_val = 'Positive' AND pp.grade_group::int >= 3 AND pb.ordr_cd = 'PSA001' AND pb.mark_rslt_val::float >= 10 ORDER BY sr.s_patno"
+      }
+    ]
   }
 ]

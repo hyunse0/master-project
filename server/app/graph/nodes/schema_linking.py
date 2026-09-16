@@ -7,16 +7,20 @@ KPI 비교용 토글: tags["schema_rag_mode"] == "full_dump"이면 Qdrant 검색
 import logging
 
 from qdrant_client import QdrantClient
+from qdrant_client.models import FusionQuery, Prefetch, Fusion
 
 from app.domain.loader import DomainConfig
 from app.embedding.embedder import EmbeddingEngine
+from app.embedding.sparse_embedder import SparseEmbedder
 from app.graph.state import GraphState
+from app.knowledge.schema_indexer import DENSE_VECTOR_NAME, SPARSE_VECTOR_NAME
 from app.sql.column_relevance import build_column_details, classify_columns_for_tables, render_tiered_schema_block
 from app.sql.schema_provider import SchemaProvider
 
 logger = logging.getLogger(__name__)
 
 _TOP_N_TABLES = 5
+_PREFETCH_LIMIT = 20
 
 
 def _tier_candidates(
@@ -98,6 +102,7 @@ def make_schema_linking_node(
     embedder: EmbeddingEngine,
     qdrant_client: QdrantClient,
     schema_provider: SchemaProvider,
+    sparse_embedder: SparseEmbedder,
 ):
     def schema_linking_node(state: GraphState) -> dict:
         tags = state.get("tags") or {}
@@ -135,9 +140,17 @@ def make_schema_linking_node(
         candidates: list[str] = []
         candidate_details: list[dict] = []
         if qdrant_client.collection_exists(domain.qdrant_schema_collection):
+            # dense(의미 유사도) + sparse(BM25, 정확 토큰 매칭)를 각각 20개씩 뽑아 RRF로
+            # 합친다 — exam_cd/ADT001처럼 의미가 희박한 컬럼명·코드값은 dense만으론 잘
+            # 안 잡히는데, sparse가 정확 문자열 일치를 보완한다(EXP-019).
+            sparse_query = sparse_embedder.embed_query(query_text)
             result = qdrant_client.query_points(
                 collection_name=domain.qdrant_schema_collection,
-                query=embedding,
+                prefetch=[
+                    Prefetch(query=embedding, using=DENSE_VECTOR_NAME, limit=_PREFETCH_LIMIT),
+                    Prefetch(query=sparse_query, using=SPARSE_VECTOR_NAME, limit=_PREFETCH_LIMIT),
+                ],
+                query=FusionQuery(fusion=Fusion.RRF),
                 limit=_TOP_N_TABLES,
                 with_payload=True,
             )

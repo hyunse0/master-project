@@ -153,6 +153,23 @@ async function postJSON<T>(path: string): Promise<T> {
   return res.json() as Promise<T>
 }
 
+async function postJSONBody<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const detail = await res.json().catch(() => null)
+    throw new Error(detail?.detail ?? `${path} 요청 실패: ${res.status}`)
+  }
+  return res.json() as Promise<T>
+}
+
+export interface GoldenSetAddResult {
+  status: 'added' | 'exists'
+}
+
 function buildQuery(params: Record<string, string | number | undefined>): string {
   const usp = new URLSearchParams()
   for (const [key, value] of Object.entries(params)) {
@@ -176,6 +193,11 @@ export const evalApi = {
     getJSON<SelfCorrectionSummary>(`/eval/self-correction${buildQuery({ domain })}`),
 
   goldenSet: (domain?: string) => getJSON<GoldenSetList>(`/eval/golden-set${buildQuery({ domain })}`),
+
+  // 결과 카드의 "Golden Set에 추가" 버튼 — 지금 질문+실행된 SQL을 golden_set.json에 1턴짜리
+  // 대화로 append한다. 이미 같은 질문이 있으면 서버가 추가하지 않고 status: 'exists'로 알려준다.
+  addGoldenSetCase: (domain: string, question: string, expectedSql: string) =>
+    postJSONBody<GoldenSetAddResult>('/eval/golden-set', { domain, question, expected_sql: expectedSql }),
 
   runExecutionAccuracy: (domain: string) =>
     postJSON<ExecutionAccuracyJobStart>(`/eval/execution-accuracy/run${buildQuery({ domain })}`),

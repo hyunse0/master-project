@@ -68,5 +68,325 @@
     "sql_before_edit": "SELECT\n  ppath.grade_group AS gleason_risk_group,\n  COUNT(DISTINCT pop.s_patno) AS patient_count\nFROM\n  poc.poc_prostate_op pop\nJOIN\n  poc.poc_prostate_path ppath ON pop.s_patno = ppath.s_patno\n    AND TO_DATE(ppath.rslt_cnfm_dt, 'YYYYMMDD') <= TO_DATE(pop.op_dt, 'YYYYMMDD')\nLEFT JOIN\n  poc.poc_prostate_patient_info ppinfo ON pop.s_patno = ppinfo.s_patno\nWHERE\n  pop.op_dt IS NOT NULL\n  AND TO_DATE(pop.op_dt, 'YYYYMMDD') >= DATE '2023-01-01'\n  AND pop.inhosp_op_eng_nm ILIKE '%robot%'\nGROUP BY\n  ppath.grade_group\nORDER BY\n  patient_count DESC\nLIMIT 100",
     "correction_reason": "로봇 수술 여부는 ILIKE '%robot%'이 아니라 inhosp_op_eng_nm의 실제 값(Robotic/Robot-assisted 계열)을 IN절로 명시해야 함",
     "added_at": "2026-08-30T09:27:35.375463+00:00"
+  },
+  {
+    "id": "f9071f01-5d5f-4502-8769-5a5fae33e5a4",
+    "question": "로봇수술을 받은 환자들의 병기 분포를 알려줘",
+    "intent": "count patients by disease stage among robot surgery cohort",
+    "sql": "SELECT pi.dis_stage, COUNT(DISTINCT po.s_patno) AS patient_count FROM poc.poc_prostate_op po JOIN poc.poc_prostate_patient_info pi ON po.s_patno = pi.s_patno WHERE po.inhosp_op_eng_nm IN ('Robotic Radical Prostatectomy (da Vinci)', 'Robot-assisted Radical Prostatectomy', 'Robot-assisted Laparoscopic Radical Prostatectomy') GROUP BY pi.dis_stage ORDER BY pi.dis_stage",
+    "tables": [
+      "poc.poc_prostate_op",
+      "poc.poc_prostate_patient_info"
+    ],
+    "metrics": [
+      "patient_count"
+    ],
+    "domain": "poc_prostate",
+    "source_run_id": null,
+    "sql_before_edit": null,
+    "correction_reason": null,
+    "added_at": null
+  },
+  {
+    "id": "43f1f9fe-4c92-46c0-b390-1c87a25e4883",
+    "question": "암종 소분류별로 환자가 가장 많은 병기를 알려줘",
+    "intent": "top disease stage per cancer subtype",
+    "sql": "WITH counts AS (SELECT crcn_sm_nm, dis_stage, COUNT(DISTINCT s_patno) AS patient_count, ROW_NUMBER() OVER (PARTITION BY crcn_sm_nm ORDER BY COUNT(DISTINCT s_patno) DESC) AS rn FROM poc.poc_prostate_patient_info GROUP BY crcn_sm_nm, dis_stage) SELECT crcn_sm_nm, dis_stage, patient_count FROM counts WHERE rn = 1 ORDER BY crcn_sm_nm",
+    "tables": [
+      "poc.poc_prostate_patient_info"
+    ],
+    "metrics": [
+      "patient_count"
+    ],
+    "domain": "poc_prostate",
+    "source_run_id": null,
+    "sql_before_edit": null,
+    "correction_reason": null,
+    "added_at": null
+  },
+  {
+    "id": "97f5fde5-434b-46ae-aff1-ef1717c7660f",
+    "question": "CT 또는 MRI에서 양성 소견이 나온 환자의 병기를 함께 보여줘",
+    "intent": "list patients with positive ct or mri finding and disease stage",
+    "sql": "SELECT DISTINCT sr.s_patno, pi.dis_stage FROM poc.poc_sslrdexrt sr JOIN poc.poc_prostate_patient_info pi ON sr.s_patno = pi.s_patno WHERE sr.exam_cd IN ('CT001', 'MRI001') AND sr.mark_rslt_val = 'Positive' ORDER BY sr.s_patno",
+    "tables": [
+      "poc.poc_sslrdexrt",
+      "poc.poc_prostate_patient_info"
+    ],
+    "metrics": [],
+    "domain": "poc_prostate",
+    "source_run_id": null,
+    "sql_before_edit": null,
+    "correction_reason": null,
+    "added_at": null
+  },
+  {
+    "id": "b38b2cbb-ac50-4c52-b580-8b9f08245dfe",
+    "question": "PSA 수치가 4.0 이상이고 Gleason Grade Group이 4 이상인 환자를 보여줘",
+    "intent": "list patients with high psa and high gleason grade group",
+    "sql": "SELECT DISTINCT pb.s_patno FROM poc.poc_prostate_blood pb JOIN poc.poc_prostate_path pp ON pb.s_patno = pp.s_patno WHERE pb.ordr_cd = 'PSA001' AND pb.mark_rslt_val::float >= 4.0 AND pp.grade_group::int >= 4 ORDER BY pb.s_patno",
+    "tables": [
+      "poc.poc_prostate_blood",
+      "poc.poc_prostate_path"
+    ],
+    "metrics": [],
+    "domain": "poc_prostate",
+    "source_run_id": null,
+    "sql_before_edit": null,
+    "correction_reason": null,
+    "added_at": null
+  },
+  {
+    "id": "56163e5b-a72b-47e7-8c4c-be474aec94b2",
+    "question": "호르몬 치료제를 처방받았고 응급수술 이력이 있는 환자의 병기를 보여줘",
+    "intent": "list patients with hormone therapy and emergency surgery, disease stage",
+    "sql": "SELECT DISTINCT od.s_patno, pi.dis_stage FROM poc.poc_ooodmordr od JOIN poc.poc_prostate_op po ON od.s_patno = po.s_patno JOIN poc.poc_prostate_patient_info pi ON od.s_patno = pi.s_patno WHERE od.ordr_cd IN ('ADT001', 'ADT002') AND po.emrcy_op_yn = 'Y' ORDER BY od.s_patno",
+    "tables": [
+      "poc.poc_ooodmordr",
+      "poc.poc_prostate_op",
+      "poc.poc_prostate_patient_info"
+    ],
+    "metrics": [],
+    "domain": "poc_prostate",
+    "source_run_id": null,
+    "sql_before_edit": null,
+    "correction_reason": null,
+    "added_at": null
+  },
+  {
+    "id": "6147e855-80fe-44a7-9ad1-38a8b266d8de",
+    "question": "전립선암 환자는 총 몇 명인가요?",
+    "intent": "count",
+    "sql": "SELECT COUNT(DISTINCT s_patno) FROM poc.poc_prostate_patient_info",
+    "tables": [
+      "poc.poc_prostate_patient_info"
+    ],
+    "metrics": [],
+    "domain": "poc_prostate",
+    "source_run_id": "9c769917-03f6-4662-9160-cfef12a9e5b0",
+    "sql_before_edit": "SELECT COUNT(DISTINCT s_patno) AS patient_count\nFROM poc.poc_prostate_patient_info\nORDER BY patient_count\nLIMIT 100;",
+    "correction_reason": "단일 집계값(COUNT) 결과에 불필요한 ORDER BY/LIMIT을 붙이고, 실제 쓰지 않은 테이블(poc_path, poc_msmamcamn)까지 참조 테이블로 잘못 남겨서 정리함 — 집계 결과가 1행뿐일 때는 ORDER BY/LIMIT이 무의미함",
+    "added_at": "2026-09-14T14:15:20.363331+00:00"
+  },
+  {
+    "id": "43296743-e5a1-4b83-af20-763af0d773af",
+    "question": "수술 종류별 건수를 알려줘",
+    "intent": "count surgeries grouped by type",
+    "sql": "SELECT inhosp_op_eng_nm, COUNT(*) AS op_count FROM poc.poc_prostate_op GROUP BY inhosp_op_eng_nm ORDER BY op_count DESC",
+    "tables": [
+      "poc.poc_prostate_op"
+    ],
+    "metrics": [
+      "op_count"
+    ],
+    "domain": "poc_prostate",
+    "source_run_id": null,
+    "sql_before_edit": null,
+    "correction_reason": null,
+    "added_at": null
+  },
+  {
+    "id": "6f15849a-7c6b-4dbd-8d4f-b52d8dc98904",
+    "question": "집도과별 수술 건수를 알려줘",
+    "intent": "count surgeries grouped by department",
+    "sql": "SELECT opdp_cd, COUNT(*) AS op_count FROM poc.poc_prostate_op GROUP BY opdp_cd ORDER BY op_count DESC",
+    "tables": [
+      "poc.poc_prostate_op"
+    ],
+    "metrics": [
+      "op_count"
+    ],
+    "domain": "poc_prostate",
+    "source_run_id": null,
+    "sql_before_edit": null,
+    "correction_reason": null,
+    "added_at": null
+  },
+  {
+    "id": "057c68d8-8a2e-47c2-b715-79bf09b5f12d",
+    "question": "병리 검사 결과 등급 분포를 알려줘",
+    "intent": "count pathology exams grouped by score",
+    "sql": "SELECT score, COUNT(*) AS exam_count FROM poc.poc_prostate_path GROUP BY score ORDER BY score",
+    "tables": [
+      "poc.poc_prostate_path"
+    ],
+    "metrics": [
+      "exam_count"
+    ],
+    "domain": "poc_prostate",
+    "source_run_id": null,
+    "sql_before_edit": null,
+    "correction_reason": null,
+    "added_at": null
+  },
+  {
+    "id": "cf51e41e-f391-4071-a713-abe9054cb838",
+    "question": "처방코드별 검사 건수를 보여줘",
+    "intent": "count blood test exams grouped by order code",
+    "sql": "SELECT ordr_cd, COUNT(*) AS exam_count FROM poc.poc_prostate_blood GROUP BY ordr_cd ORDER BY exam_count DESC",
+    "tables": [
+      "poc.poc_prostate_blood"
+    ],
+    "metrics": [
+      "exam_count"
+    ],
+    "domain": "poc_prostate",
+    "source_run_id": null,
+    "sql_before_edit": null,
+    "correction_reason": null,
+    "added_at": null
+  },
+  {
+    "id": "0596145d-13ff-46e1-b637-bea62840fd3d",
+    "question": "환자별 수술 이력과 병리 검사 결과를 함께 보여줘",
+    "intent": "list surgery history joined with pathology results",
+    "sql": "SELECT po.s_patno, po.op_dt, po.inhosp_op_eng_nm, pp.gleason, pp.grade_group FROM poc.poc_prostate_op po JOIN poc.poc_prostate_path pp ON po.s_patno = pp.s_patno ORDER BY po.s_patno LIMIT 100",
+    "tables": [
+      "poc.poc_prostate_op",
+      "poc.poc_prostate_path"
+    ],
+    "metrics": [],
+    "domain": "poc_prostate",
+    "source_run_id": null,
+    "sql_before_edit": null,
+    "correction_reason": null,
+    "added_at": null
+  },
+  {
+    "id": "2823997e-1c01-4630-aae6-8235b69d98b6",
+    "question": "연령대별로 가장 많이 시행된 수술 종류를 알려줘",
+    "intent": "top surgery type per age band",
+    "sql": "WITH counts AS (SELECT pi.age_10_sect_nm, po.inhosp_op_eng_nm, COUNT(*) AS op_count, ROW_NUMBER() OVER (PARTITION BY pi.age_10_sect_nm ORDER BY COUNT(*) DESC) AS rn FROM poc.poc_prostate_patient_info pi JOIN poc.poc_prostate_op po ON pi.s_patno = po.s_patno GROUP BY pi.age_10_sect_nm, po.inhosp_op_eng_nm) SELECT age_10_sect_nm, inhosp_op_eng_nm, op_count FROM counts WHERE rn = 1 ORDER BY age_10_sect_nm",
+    "tables": [
+      "poc.poc_prostate_patient_info",
+      "poc.poc_prostate_op"
+    ],
+    "metrics": [
+      "op_count"
+    ],
+    "domain": "poc_prostate",
+    "source_run_id": null,
+    "sql_before_edit": null,
+    "correction_reason": null,
+    "added_at": null
+  },
+  {
+    "id": "3e9efe54-fbee-4376-9e97-1288504c31b2",
+    "question": "집도과별 응급수술 비율을 알려줘",
+    "intent": "emergency surgery ratio per department",
+    "sql": "SELECT opdp_cd, ROUND(COUNT(*) FILTER (WHERE emrcy_op_yn = 'Y')::numeric / COUNT(*), 4) AS emrcy_ratio FROM poc.poc_prostate_op GROUP BY opdp_cd ORDER BY emrcy_ratio DESC",
+    "tables": [
+      "poc.poc_prostate_op"
+    ],
+    "metrics": [
+      "emrcy_ratio"
+    ],
+    "domain": "poc_prostate",
+    "source_run_id": null,
+    "sql_before_edit": null,
+    "correction_reason": null,
+    "added_at": null
+  },
+  {
+    "id": "26a2a368-d518-4c64-890b-a51e18631975",
+    "question": "응급수술을 받은 환자의 병기 분포를 보여줘",
+    "intent": "disease stage distribution among emergency surgery patients",
+    "sql": "SELECT pi.dis_stage, COUNT(DISTINCT po.s_patno) AS patient_count FROM poc.poc_prostate_op po JOIN poc.poc_prostate_patient_info pi ON po.s_patno = pi.s_patno WHERE po.emrcy_op_yn = 'Y' GROUP BY pi.dis_stage ORDER BY pi.dis_stage",
+    "tables": [
+      "poc.poc_prostate_op",
+      "poc.poc_prostate_patient_info"
+    ],
+    "metrics": [
+      "patient_count"
+    ],
+    "domain": "poc_prostate",
+    "source_run_id": null,
+    "sql_before_edit": null,
+    "correction_reason": null,
+    "added_at": null
+  },
+  {
+    "id": "9b79a780-7ff8-495f-8aae-24129232c471",
+    "question": "PSA 수치가 10 이상인 환자는 몇 명인가요?",
+    "intent": "count patients with high psa",
+    "sql": "SELECT COUNT(DISTINCT s_patno) FROM poc.poc_prostate_blood WHERE ordr_cd = 'PSA001' AND mark_rslt_val::float >= 10",
+    "tables": [
+      "poc.poc_prostate_blood"
+    ],
+    "metrics": [],
+    "domain": "poc_prostate",
+    "source_run_id": null,
+    "sql_before_edit": null,
+    "correction_reason": null,
+    "added_at": null
+  },
+  {
+    "id": "21baf3d7-80df-4f6b-93df-20ee3e0ee498",
+    "question": "로봇수술 후 PSA 수치가 0.2 이상으로 재상승한 생화학적 재발 환자의 수술 종류와 Gleason Grade Group을 보여줘",
+    "intent": "list biochemical recurrence patients after robot surgery with surgery type and gleason grade group",
+    "sql": "SELECT DISTINCT po.s_patno, po.inhosp_op_eng_nm, pp.grade_group FROM poc.poc_prostate_op po JOIN poc.poc_prostate_path pp ON po.s_patno = pp.s_patno WHERE po.inhosp_op_eng_nm IN ('Robot-assisted Radical Prostatectomy', 'Robotic Radical Prostatectomy (da Vinci)', 'Robot-assisted Laparoscopic Radical Prostatectomy') AND EXISTS (SELECT 1 FROM poc.poc_prostate_blood pb WHERE pb.s_patno = po.s_patno AND pb.ordr_cd = 'PSA001' AND TO_DATE(pb.ordr_direct_dt, 'YYYYMMDD') > TO_DATE(po.op_dt, 'YYYYMMDD') AND pb.mark_rslt_val::numeric >= 0.2) ORDER BY po.s_patno LIMIT 100",
+    "tables": [
+      "poc.poc_prostate_op",
+      "poc.poc_prostate_path",
+      "poc.poc_prostate_blood"
+    ],
+    "metrics": [],
+    "domain": "poc_prostate",
+    "source_run_id": "16b83398-a6ed-4d1c-a39f-1087dd44879e",
+    "sql_before_edit": "SELECT po.s_patno, po.inhosp_op_eng_nm, pp.grade_group FROM poc.poc_prostate_op po JOIN poc.poc_prostate_path pp ON po.s_patno = pp.s_patno JOIN poc.poc_prostate_blood pb ON po.s_patno = pb.s_patno WHERE po.inhosp_op_eng_nm IN ('Robot-assisted Radical Prostatectomy', 'Robotic Radical Prostatectomy (da Vinci)', 'Robot-assisted Laparoscopic Radical Prostatectomy') AND pb.ordr_cd = 'PSA001' AND pb.mark_rslt_val::numeric >= 0.2 ORDER BY po.s_patno LIMIT 100",
+    "correction_reason": "PSA 재검사를 단순 JOIN으로 걸면 같은 환자가 검사 횟수만큼 중복 집계되고, 그 수치가 수술 이후 시점인지도 확인되지 않음 — EXISTS 서브쿼리로 바꾸고 TO_DATE 비교로 '수술 이후 재검사'라는 조건을 명시해야 함",
+    "added_at": "2026-09-12T21:00:00+00:00"
+  },
+  {
+    "id": "4987450d-04f7-4b50-9c73-fe07f9c1c8ed",
+    "question": "전신골스캔 또는 PET에서 골전이가 의심됐고 병기가 III기 이상인 환자의 Gleason Grade Group을 보여줘",
+    "intent": "list bone metastasis suspected patients with advanced stage and gleason grade group",
+    "sql": "SELECT DISTINCT sn.s_patno, pi.dis_stage, pp.grade_group FROM poc.poc_ssnudexrt sn JOIN poc.poc_prostate_patient_info pi ON sn.s_patno = pi.s_patno JOIN poc.poc_prostate_path pp ON sn.s_patno = pp.s_patno WHERE sn.exam_cd IN ('BONE001', 'PET001') AND sn.mark_rslt_val = 'Positive' AND pi.dis_stage IN ('III', 'IV') ORDER BY sn.s_patno LIMIT 100",
+    "tables": [
+      "poc.poc_ssnudexrt",
+      "poc.poc_prostate_patient_info",
+      "poc.poc_prostate_path"
+    ],
+    "metrics": [],
+    "domain": "poc_prostate",
+    "source_run_id": "2b33ba4e-62af-4b13-9db0-aae44966c65d",
+    "sql_before_edit": "SELECT DISTINCT sn.s_patno, pi.dis_stage, pp.grade_group FROM poc.poc_ssnudexrt sn JOIN poc.poc_prostate_patient_info pi ON sn.s_patno = pi.s_patno JOIN poc.poc_prostate_path pp ON sn.s_patno = pp.s_patno WHERE sn.exam_rslt_val ILIKE '%양성%' AND pi.dis_stage IN ('III', 'IV') ORDER BY sn.s_patno LIMIT 100",
+    "correction_reason": "양성 판정은 원문 텍스트(exam_rslt_val)가 아니라 정규화된 판정값 컬럼(mark_rslt_val='Positive')으로 확인해야 하고, exam_cd를 BONE001/PET001로 명시해야 골스캔·PET 검사로 한정됨 — ILIKE 방식은 원문 표기가 제각각이라 일부 양성 건을 놓침",
+    "added_at": "2026-09-13T21:00:00+00:00"
+  },
+  {
+    "id": "db8e6f0f-c35f-4e30-9971-86a2d4916766",
+    "question": "로봇 수술을 받았고 호르몬 치료도 받았으며 PSA 수치가 10 이상인 환자는 몇 명인가요?",
+    "intent": "count patients with robot surgery, hormone therapy, and high psa",
+    "sql": "SELECT COUNT(DISTINCT po.s_patno) FROM poc.poc_prostate_op po JOIN poc.poc_ooodmordr od ON po.s_patno = od.s_patno JOIN poc.poc_prostate_blood pb ON po.s_patno = pb.s_patno WHERE po.inhosp_op_eng_nm IN ('Robot-assisted Radical Prostatectomy', 'Robotic Radical Prostatectomy (da Vinci)', 'Robot-assisted Laparoscopic Radical Prostatectomy') AND od.ordr_cd IN ('ADT001', 'ADT002') AND pb.ordr_cd = 'PSA001' AND pb.mark_rslt_val::float >= 10",
+    "tables": [
+      "poc.poc_prostate_op",
+      "poc.poc_ooodmordr",
+      "poc.poc_prostate_blood"
+    ],
+    "metrics": [],
+    "domain": "poc_prostate",
+    "source_run_id": "2d1ca7da-faaa-4f77-8078-dcef48a59b11",
+    "sql_before_edit": "SELECT COUNT(DISTINCT po.s_patno) FROM poc.poc_prostate_op po JOIN poc.poc_ooodmordr od ON po.s_patno = od.s_patno JOIN poc.poc_prostate_blood pb ON po.s_patno = pb.s_patno WHERE po.inhosp_op_eng_nm ILIKE '%robot%' AND od.ordr_cd IN ('ADT001', 'ADT002') AND pb.exam_cd = 'PSA001' AND pb.mark_rslt_val::float >= 10",
+    "correction_reason": "두 가지 오류를 함께 수정 — ① 로봇 수술 판별은 ILIKE '%robot%' 대신 inhosp_op_eng_nm 실제 값 목록으로, ② PSA 코드는 blood 테이블의 ordr_cd 컬럼에 있는데 exam_cd 컬럼에 넣는 바람에 조건이 항상 거짓이 되어 결과가 0건으로 나왔음",
+    "added_at": "2026-09-11T21:00:00+00:00"
+  },
+  {
+    "id": "d725c566-62e5-4b18-989b-b56dbb470717",
+    "question": "Gleason Grade Group 5 비율이 가장 높은 연령대와 그 비율을 알려줘",
+    "intent": "age band with highest gleason grade group 5 ratio",
+    "sql": "WITH ratios AS (SELECT pi.age_10_sect_nm, COUNT(*) FILTER (WHERE pp.grade_group = '5') AS grade5_count, COUNT(*) AS total_count FROM poc.poc_prostate_patient_info pi JOIN poc.poc_prostate_path pp ON pi.s_patno = pp.s_patno GROUP BY pi.age_10_sect_nm) SELECT age_10_sect_nm, grade5_count, total_count, ROUND(grade5_count::numeric / total_count, 4) AS grade5_ratio FROM ratios ORDER BY grade5_ratio DESC LIMIT 1",
+    "tables": [
+      "poc.poc_prostate_patient_info",
+      "poc.poc_prostate_path"
+    ],
+    "metrics": [
+      "grade5_ratio"
+    ],
+    "domain": "poc_prostate",
+    "source_run_id": "a1f0c0ab-f30c-4c23-9c74-b839df299cb3",
+    "sql_before_edit": "SELECT pi.age_10_sect_nm, AVG(CASE WHEN pp.grade_group = 5 THEN 1 ELSE 0 END) AS grade5_ratio FROM poc.poc_prostate_patient_info pi JOIN poc.poc_prostate_path pp ON pi.s_patno = pp.s_patno GROUP BY pi.age_10_sect_nm ORDER BY grade5_ratio DESC LIMIT 1",
+    "correction_reason": "grade_group은 TEXT 컬럼이라 정수 5와 비교하면 타입 오류가 나고, AVG(CASE...) 방식은 분자/분모 정의가 불명확함 — COUNT(*) FILTER (WHERE grade_group='5')로 조건부 집계한 뒤 전체 건수 대비 비율을 명시적으로 계산해야 함",
+    "added_at": "2026-09-13T21:00:00+00:00"
   }
 ]
